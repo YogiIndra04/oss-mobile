@@ -1,0 +1,44 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model users {
+  id_user         String            @id @db.Char(36)
+  role_user       users_role_user
+  username        String            @unique(map: "username") @db.VarChar(50)
+  password        String            @db.VarChar(255)
+  reset_password  String?           @db.Char(6)
+  created_at      DateTime          @default(now()) @db.Timestamp(0)
+  updated_at      DateTime          @default(now()) @updatedAt @db.Timestamp(0)
+  profil_pengguna profil_pengguna[]
+}
+
+model profil_pengguna {
+  id_profil       String   @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  gambar_profil   String?  @db.LongText
+  nama_pengguna   String   @db.VarChar(100)
+  email_pengguna  String?  @db.VarChar(100)
+  kontak_pengguna String?  @db.VarChar(20)
+  alamat_pengguna String?  @db.VarChar(255)
+  updated_at      DateTime @default(now()) @db.Timestamp(0)
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  id_user         String   @db.Char(36)
+  user            users    @relation(fields: [id_user], references: [id_user], onDelete: Cascade, map: "fk_user_profil")
+
+  @@index([id_user], map: "fk_user_profil")
+}
+
+enum users_role_user {
+  admin
+  konsultan
+}
