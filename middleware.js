@@ -6,7 +6,12 @@ export async function middleware(req) {
   const { pathname } = req.nextUrl;
 
   // --- Biarkan route public tanpa token ---
-  const publicPaths = ["/api/auth/login", "/api/auth/register","/api/auth/me", "/api/users"];
+  const publicPaths = [
+    "/api/auth/login", 
+    "/api/auth/me", 
+    "/api/users",
+    "/api/companies",
+  ];
   if (publicPaths.some(path => pathname.startsWith(path))) {
     return NextResponse.next();
   }

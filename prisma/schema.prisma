@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 generator client {
   provider = "prisma-client-js"
 }
@@ -36,6 +31,22 @@ model profil_pengguna {
   user            users    @relation(fields: [id_user], references: [id_user], onDelete: Cascade, map: "fk_user_profil")
 
   @@index([id_user], map: "fk_user_profil")
+}
+
+model companies {
+  company_id           String   @id @default(uuid()) @db.Char(36)
+  business_name        String   @db.VarChar(255)
+  company_name         String   @db.VarChar(255)
+  company_email        String?  @db.VarChar(255)
+  company_contact      String?  @db.VarChar(20)
+  company_web          String?  @db.VarChar(255)
+  company_registration String?  @db.VarChar(50)
+  company_wa           String?  @db.VarChar(20)
+  company_ig           String?  @db.VarChar(50)
+  company_yt           String?  @db.VarChar(50)
+  company_tt           String?  @db.VarChar(50)
+  created_at           DateTime @default(now()) @db.Timestamp(0)
+  updated_at           DateTime @default(now()) @updatedAt @db.Timestamp(0)
 }
 
 enum users_role_user {
