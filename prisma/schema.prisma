@@ -8,45 +8,67 @@ datasource db {
 }
 
 model users {
-  id_user         String            @id @db.Char(36)
-  role_user       users_role_user
-  username        String            @unique(map: "username") @db.VarChar(50)
-  password        String            @db.VarChar(255)
-  reset_password  String?           @db.Char(6)
-  created_at      DateTime          @default(now()) @db.Timestamp(0)
-  updated_at      DateTime          @default(now()) @updatedAt @db.Timestamp(0)
-  profil_pengguna profil_pengguna[]
+  id_user      String       @id @db.Char(36)
+  role_user    users_role_user
+  username     String       @unique(map: "username") @db.VarChar(50)
+  password     String       @db.VarChar(255)
+  reset_password String?    @db.Char(6)
+  created_at   DateTime     @default(now()) @db.Timestamp(0)
+  updated_at   DateTime     @default(now()) @updatedAt @db.Timestamp(0)
+
+  profile_user profile_user?
 }
 
-model profil_pengguna {
-  id_profil       String   @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  gambar_profil   String?  @db.LongText
-  nama_pengguna   String   @db.VarChar(100)
-  email_pengguna  String?  @db.VarChar(100)
-  kontak_pengguna String?  @db.VarChar(20)
-  alamat_pengguna String?  @db.VarChar(255)
-  updated_at      DateTime @default(now()) @db.Timestamp(0)
-  created_at      DateTime @default(now()) @db.Timestamp(0)
-  id_user         String   @db.Char(36)
-  user            users    @relation(fields: [id_user], references: [id_user], onDelete: Cascade, map: "fk_user_profil")
+model profile_user {
+  id_user       String   @id @db.Char(36) // PK + FK ke users
+  profile_image String?  @db.Text
+  user_name     String   @db.VarChar(100)
+  email_user    String?  @db.VarChar(100)
+  user_contact  String?  @db.VarChar(20)
+  user_address  String?  @db.VarChar(255)
+  created_at    DateTime @default(now()) @db.Timestamp(0)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
-  @@index([id_user], map: "fk_user_profil")
+  user users @relation(fields: [id_user], references: [id_user], onDelete: Cascade, map: "fk_user_profile")
 }
 
 model companies {
-  company_id           String   @id @default(uuid()) @db.Char(36)
-  business_name        String   @db.VarChar(255)
-  company_name         String   @db.VarChar(255)
-  company_email        String?  @db.VarChar(255)
-  company_contact      String?  @db.VarChar(20)
-  company_web          String?  @db.VarChar(255)
-  company_registration String?  @db.VarChar(50)
-  company_wa           String?  @db.VarChar(20)
-  company_ig           String?  @db.VarChar(50)
-  company_yt           String?  @db.VarChar(50)
-  company_tt           String?  @db.VarChar(50)
-  created_at           DateTime @default(now()) @db.Timestamp(0)
-  updated_at           DateTime @default(now()) @updatedAt @db.Timestamp(0)
+  company_id          String              @id @db.Char(36)
+  business_name       String              @db.VarChar(255)
+  company_name        String              @db.VarChar(255)
+  company_email       String?             @db.VarChar(255)
+  company_contact     String?             @db.VarChar(20)
+  company_web         String?             @db.VarChar(255)
+  company_registration String?            @db.VarChar(50)
+  company_wa          String?             @db.VarChar(20)
+  company_ig          String?             @db.VarChar(50)
+  company_yt          String?             @db.VarChar(50)
+  company_tt          String?             @db.VarChar(50)
+  created_at          DateTime            @default(now()) @db.Timestamp(0)
+  updated_at          DateTime            @default(now()) @updatedAt @db.Timestamp(0)
+
+  // ✅ Relasi ke company_addresses,, di database ga ada tabel ini... ini virtual field yang dibuat prisma supaya bisa relasi one-to-many
+  addresses           company_addresses[]
+}
+
+model company_addresses {
+  address_id      String   @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  company_id      String   @db.Char(36)
+  address_type    AddressType
+  company_address String   @db.VarChar(255)
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamp(0)
+
+  // ✅ Relasi balik ke companies
+  company companies @relation(fields: [company_id], references: [company_id], onDelete: Cascade)
+
+  @@index([company_id])
+}
+
+enum AddressType {
+  Head_Office
+  Branch_Office
+  Warehouse
 }
 
 enum users_role_user {

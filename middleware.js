@@ -1,50 +1,66 @@
 // middleware.js
-import jwt from "jsonwebtoken";
-import { NextResponse } from "next/server";
+import { jwtVerify } from "jose"
+import { NextResponse } from "next/server"
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || process.env.NEXT_PUBLIC_JWT_SECRET || "supersecret123"
+)
 
 export async function middleware(req) {
-  const { pathname } = req.nextUrl;
+  const { pathname } = req.nextUrl
 
-  // --- Biarkan route public tanpa token ---
+  // --- route public tanpa token ---
   const publicPaths = [
-    "/api/auth/login", 
-    "/api/auth/me", 
-    "/api/users",
-    "/api/companies",
-  ];
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/auth/me",
+    "/api/users"
+  ]
+
   if (publicPaths.some(path => pathname.startsWith(path))) {
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
-  // --- Cek token ---
-  const token = req.headers.get("authorization")?.split(" ")[1];
+  // --- Ambil token dari header ---
+  const token = req.headers.get("authorization")?.split(" ")[1]
   if (!token) {
-    return NextResponse.json(
-      { message: "Unauthorized: No token provided" },
-      { status: 401 }
-    );
+    return NextResponse.json({ message: "Unauthorized: No token" }, { status: 401 })
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // ✅ pakai jose
+    const { payload } = await jwtVerify(token, JWT_SECRET)
 
-    // contoh: route admin khusus role admin
-    if (pathname.startsWith("/api/admin") && decoded.role_user !== "admin") {
-      return NextResponse.json(
-        { message: "Forbidden: You are not an admin" },
-        { status: 403 }
-      );
+    // --- Mapping akses ---
+    const roleAccess = {
+      admin: [
+        "/api/company-addresses",
+        "/api/companies",
+        "/api/profile_user",
+      ],
+      konsultan: [
+        "/api/companies",
+        "/api/profile_user",
+      ]
     }
 
-    return NextResponse.next();
+    const allowedPaths = roleAccess[payload.role_user] || []
+    const isAllowed = allowedPaths.some(path => pathname.startsWith(path))
+
+    if (!isAllowed) {
+      return NextResponse.json(
+        { message: "Forbidden: You don't have access" },
+        { status: 403 }
+      )
+    }
+
+    return NextResponse.next()
   } catch (err) {
-    return NextResponse.json(
-      { message: "Unauthorized: Invalid token" },
-      { status: 401 }
-    );
+    console.error("JWT verify error:", err.message)
+    return NextResponse.json({ message: "Unauthorized: Invalid token" }, { status: 401 })
   }
 }
 
 export const config = {
-  matcher: ["/api/:path*"], //middleware hanya untuk API
-};
+  matcher: ["/api/:path*"],
+}
