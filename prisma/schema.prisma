@@ -49,6 +49,8 @@ model companies {
 
   // ✅ Relasi ke company_addresses,, di database ga ada tabel ini... ini virtual field yang dibuat prisma supaya bisa relasi one-to-many
   addresses           company_addresses[]
+
+  tac tac[]
 }
 
 model company_addresses {
@@ -63,6 +65,71 @@ model company_addresses {
   company companies @relation(fields: [company_id], references: [company_id], onDelete: Cascade)
 
   @@index([company_id])
+}
+model tac {
+  tac_id        String   @id @default(uuid()) @db.Char(36)
+  company_id    String   @db.Char(36)
+  tac_description String
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  company companies @relation(fields: [company_id], references: [company_id])
+}
+
+model bank {
+  bank_id            String   @id @default(uuid()) @db.Char(36)
+  bank_name          String   @db.VarChar(255)
+  bank_address       String?  @db.VarChar(255)
+  account_number     String   @unique @db.VarChar(50)
+  beneficiary_name   String   @db.VarChar(255)
+  beneficiary_address String? @db.VarChar(255)
+  swift_code         String?  @db.VarChar(20)
+  created_at         DateTime @default(now()) @db.Timestamp(0)
+  updated_at         DateTime @default(now()) @updatedAt @db.Timestamp(0)
+}
+
+model customer {
+  customer_id      String   @id @default(uuid()) @db.Char(36)
+  customer_name    String   @db.VarChar(255)
+  email            String?  @unique @db.VarChar(255)
+  customer_contact String?  @db.VarChar(20)
+  customer_address String?  @db.VarChar(255)
+  created_at       DateTime @default(now()) @db.Timestamp(0)
+  updated_at       DateTime @updatedAt @db.Timestamp(0)
+}
+
+model product {
+  product_id         String   @id @default(uuid()) @db.Char(36)
+  type_status        ProductTypeStatus
+  item_type          ProductItemType
+  product_title      String   @db.VarChar(255)
+  product_description String? @db.Text
+  product_amount     Int
+  created_at         DateTime @default(now()) @db.Timestamp(0)
+  updated_at         DateTime @default(now()) @updatedAt @db.Timestamp(0)
+}
+
+model events {
+  event_id          String   @id @default(uuid()) @db.Char(36)
+  event_name        String   @db.VarChar(255)
+  event_description String?  @db.Text
+  event_venue       String?  @db.VarChar(255)
+  event_address     String?  @db.VarChar(255)
+  event_date        DateTime @db.DateTime
+  event_cost        Int?
+  created_at        DateTime @default(now()) @db.Timestamp(0)
+  updated_at        DateTime @updatedAt @db.Timestamp(0)
+}
+
+
+enum ProductTypeStatus {
+  tetap
+  tidak_tetap
+}
+
+enum ProductItemType {
+  product
+  service
 }
 
 enum AddressType {
