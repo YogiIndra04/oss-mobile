@@ -17,6 +17,8 @@ model users {
   updated_at   DateTime     @default(now()) @updatedAt @db.Timestamp(0)
 
   profile_user profile_user?
+
+  PaymentProofs paymentproofs[]
 }
 
 model profile_user {
@@ -107,6 +109,8 @@ model product {
   product_amount     Int
   created_at         DateTime @default(now()) @db.Timestamp(0)
   updated_at         DateTime @default(now()) @updatedAt @db.Timestamp(0)
+
+  ProductDetail productdetail[]
 }
 
 model events {
@@ -119,8 +123,129 @@ model events {
   event_cost        Int?
   created_at        DateTime @default(now()) @db.Timestamp(0)
   updated_at        DateTime @updatedAt @db.Timestamp(0)
+
+  EventDetail eventdetail[]
 }
 
+model invoices {
+  invoice_id                  String   @id @default(uuid()) @db.Char(36)
+  invoice_number              String   @unique @db.VarChar(20)
+  invoice_type                InvoiceType
+  customer_name               String   @db.VarChar(255)
+  customer_address            String?  @db.VarChar(255)
+  unpaid                      Decimal? @db.Decimal(10, 2)
+  total_amount                Decimal  @db.Decimal(10, 2)
+  payment_status              PaymentStatus
+  invoice_creation_date       DateTime @db.DateTime
+  payment_date                DateTime? @db.DateTime
+  completion_date             DateTime? @db.DateTime
+  due_date                    DateTime? @db.DateTime
+  currency_accepted           String   @db.VarChar(10)
+  currency_exchange_rate      Decimal? @db.Decimal(10, 4)
+  currency_exchange_rate_date DateTime? @db.DateTime
+  pdf_path                    String?  @db.LongText
+  created_at                  DateTime @default(now()) @db.Timestamp(0)
+  updated_at                  DateTime @updatedAt @db.Timestamp(0)
+
+  ProductDetail productdetail[]
+
+  EventDetail eventdetail[]
+
+  PaymentProofs paymentproofs[]
+
+  barcodes barcodes[]
+}
+
+model productdetail {
+  product_detail_id    String   @id @default(uuid()) @db.Char(36)
+  invoice_id           String   @db.Char(36)
+  product_id           String   @db.Char(36)
+  quantity             Int
+  total_product_amount Decimal  @db.Decimal(10, 2)
+  created_at           DateTime @default(now()) @db.Timestamp(6)
+  updated_at           DateTime @updatedAt @db.Timestamp(6)
+
+  //  gunakan nama model persis seperti yang ada
+  invoice invoices @relation(fields: [invoice_id], references: [invoice_id])
+  product product  @relation(fields: [product_id], references: [product_id])
+
+  @@unique([invoice_id, product_id])
+  @@map("product_detail")
+}
+
+model eventdetail {
+  event_detail_id   String   @id @default(uuid()) @db.Char(36)
+  invoice_id        String   @db.Char(36)
+  event_id          String   @db.Char(36)
+  quantity          Int
+  total_event_cost  Decimal  @db.Decimal(10, 2)
+  created_at        DateTime @default(now()) @db.Timestamp(6)
+  updated_at        DateTime @updatedAt @db.Timestamp(6)
+
+  // ✅ Relasi
+  invoice invoices @relation(fields: [invoice_id], references: [invoice_id])
+  event   events   @relation(fields: [event_id], references: [event_id])
+
+  @@unique([invoice_id, event_id])
+  @@map("event_detail")
+}
+
+model paymentproofs {
+  payment_proof_id     String   @id @default(uuid()) @db.Char(36)
+  invoice_id           String   @db.Char(36)
+  proof_status         ProofStatus
+  proof_image_path     String   @db.Text
+  proof_title          String?  @db.VarChar(255)
+  proof_description    String?  @db.Text
+  proof_amount         Decimal  @db.Decimal(10, 2)
+  uploaded_by_user_id  String   @db.Char(36)
+  created_at           DateTime @default(now()) @db.Timestamp(0)
+  updated_at           DateTime @updatedAt @db.Timestamp(0)
+
+  // ✅ Relasi
+  invoice    invoices @relation(fields: [invoice_id], references: [invoice_id])
+  uploadedBy users    @relation(fields: [uploaded_by_user_id], references: [id_user])
+
+  @@map("payment_proofs")
+}
+
+model barcodes {
+  barcode_id        String   @id @default(uuid()) @db.Char(36)
+  invoice_id        String   @unique @db.Char(36)
+  document_type     DocumentType
+  barcode_link      String   @db.Text
+  barcode_image_path String  @db.Text
+  created_at        DateTime @default(now()) @db.Timestamp(0)
+  updated_at        DateTime @updatedAt @db.Timestamp(0)
+
+  // ✅ Relasi
+  invoice invoices @relation(fields: [invoice_id], references: [invoice_id])
+
+  @@map("barcodes")
+}
+
+enum DocumentType {
+  Invoice
+  Receipt
+}
+
+enum ProofStatus {
+  Pending
+  Verified
+  Rejected
+}
+
+enum InvoiceType {
+  Pelanggan
+  Kerjasama
+}
+
+enum PaymentStatus {
+  Belum_dibayar
+  Lunas
+  Mencicil
+  Jatuh_tempo
+}
 
 enum ProductTypeStatus {
   tetap

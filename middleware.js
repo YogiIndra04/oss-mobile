@@ -47,6 +47,10 @@ export async function middleware(req) {
         "/api/customer",
         "/api/product",
         "/api/events",
+        "/api/invoices",
+        "/api/product_detail",
+        "/api/event_detail",
+        "/api/payment_proofs",
       ],
       konsultan: ["/api/companies", "/api/profile_user"],
     };
