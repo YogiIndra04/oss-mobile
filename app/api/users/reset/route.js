@@ -1,14 +1,28 @@
-// app/api/users/[id]/reset/route.js
 import prisma from "@/lib/prisma";
 import { sendMail } from "@/lib/utils/email";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
-export async function POST(req, { params }) {
+export async function POST(req) {
   try {
-    // 1) ambil email dari profile_user
+    const { username } = await req.json();
+    if (!username) {
+      return Response.json({ error: "Username wajib diisi" }, { status: 400 });
+    }
+
+    // 1) cari user by username
+    const user = await prisma.users.findUnique({
+      where: { username },
+      select: { id_user: true },
+    });
+
+    if (!user) {
+      return Response.json({ error: "User tidak ditemukan" }, { status: 404 });
+    }
+
+    // 2) ambil profile untuk email
     const profile = await prisma.profile_user.findUnique({
-      where: { id_user: params.id }, // pastikan kolom ini PK/unique di profile_user
+      where: { id_user: user.id_user },
       select: { user_name: true, email_user: true },
     });
 
@@ -19,14 +33,13 @@ export async function POST(req, { params }) {
       );
     }
 
-    // 2) generate OTP 6 digit, hash, dan expiry
+    // 3) generate OTP, hash, expiry
     const otp = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
     const otpHash = await bcrypt.hash(otp, 10);
-    const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 menit
+    const expires = new Date(Date.now() + 15 * 60 * 1000);
 
-    // 3) simpan ke tabel users (kolom: reset_password, reset_password_expires, reset_password_attempts)
     await prisma.users.update({
-      where: { id_user: params.id },
+      where: { id_user: user.id_user },
       data: {
         reset_password: otpHash,
         reset_password_expires: expires,
@@ -35,7 +48,7 @@ export async function POST(req, { params }) {
       },
     });
 
-    // 4) kirim email ke email_user dari profile_user
+    // 4) kirim email
     await sendMail({
       to: profile.email_user,
       subject: "Kode Reset Password",
@@ -51,9 +64,9 @@ export async function POST(req, { params }) {
       `,
     });
 
-    // jangan pernah return OTP di response
+    // ✅ balikin id_user supaya frontend bisa pakai di step 2
     return Response.json(
-      { message: "Reset code sent to email" },
+      { message: "Reset code sent to email", id_user: user.id_user },
       { status: 200 }
     );
   } catch (error) {

@@ -10,12 +10,14 @@
   },
   "dependencies": {
     "@prisma/client": "^6.10.1",
+    "@supabase/supabase-js": "^2.57.4",
     "bcryptjs": "^3.0.2",
     "formidable": "^3.5.4",
     "jose": "^6.1.0",
     "jsonwebtoken": "^9.0.2",
     "next": "15.5.3",
     "next-qrcode": "^2.5.1",
+    "nodemailer": "^7.0.6",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },

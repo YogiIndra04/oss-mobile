@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 
 export async function PATCH(req, { params }) {
   try {
+    const { id } = params; // ✅ ambil id_user dengan benar
     const { resetCode, newPassword } = await req.json();
 
     if (!resetCode || !newPassword) {
@@ -11,7 +12,7 @@ export async function PATCH(req, { params }) {
     }
 
     const user = await prisma.users.findUnique({
-      where: { id_user: params.id },
+      where: { id_user: id },
     });
 
     if (!user || !user.reset_password || !user.reset_password_expires) {
@@ -35,7 +36,7 @@ export async function PATCH(req, { params }) {
     const isValid = await bcrypt.compare(resetCode, user.reset_password);
     if (!isValid) {
       await prisma.users.update({
-        where: { id_user: params.id },
+        where: { id_user: id },
         data: { reset_password_attempts: { increment: 1 } },
       });
       return Response.json({ error: "Invalid reset code" }, { status: 400 });
@@ -46,7 +47,7 @@ export async function PATCH(req, { params }) {
 
     // update password & reset field OTP
     await prisma.users.update({
-      where: { id_user: params.id },
+      where: { id_user: id },
       data: {
         password: hashedPassword,
         reset_password: null,

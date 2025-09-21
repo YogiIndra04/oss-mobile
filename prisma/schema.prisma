@@ -12,13 +12,20 @@ model users {
   role_user    users_role_user
   username     String       @unique(map: "username") @db.VarChar(50)
   password     String       @db.VarChar(255)
-  reset_password String?    @db.Char(6)
+
+  // --- kolom reset password yang lebih aman ---
+  reset_password          String?   @db.VarChar(255)   // simpan HASH OTP (bcrypt), bukan 6 digit
+  reset_password_expires  DateTime?                     // kapan OTP kadaluarsa
+  reset_password_attempts Int       @default(0)         // jumlah percobaan
+
   created_at   DateTime     @default(now()) @db.Timestamp(0)
   updated_at   DateTime     @default(now()) @updatedAt @db.Timestamp(0)
 
   profile_user profile_user?
-
   PaymentProofs paymentproofs[]
+  
+  // 👉 Tambahan index untuk pencarian cepat berdasarkan role
+  @@index([role_user], map: "users_role_idx")
 }
 
 model profile_user {
@@ -32,7 +39,11 @@ model profile_user {
   updated_at    DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
   user users @relation(fields: [id_user], references: [id_user], onDelete: Cascade, map: "fk_user_profile")
+
+  // 👉 Tambahan index untuk pencarian by email (reset password / login)
+  @@index([email_user], map: "profile_user_email_idx")
 }
+
 
 model companies {
   company_id          String              @id @db.Char(36)

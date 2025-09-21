@@ -1,10 +1,10 @@
 import prisma from "@/lib/prisma";
 
-// ✅ CREATE ProductDetail
+// CREATE ProductDetail
 export async function POST(req) {
   try {
     const body = await req.json();
-    const productDetail = await prisma.productDetail.create({
+    const productDetail = await prisma.productdetail.create({
       data: {
         invoice_id: body.invoice_id,
         product_id: body.product_id,
@@ -14,16 +14,17 @@ export async function POST(req) {
     });
     return new Response(JSON.stringify(productDetail), { status: 201 });
   } catch (error) {
+    console.error("POST /productdetail error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
     });
   }
 }
 
-// ✅ GET All ProductDetails
+// GET All ProductDetails
 export async function GET() {
   try {
-    const productDetails = await prisma.productDetail.findMany({
+    const productDetails = await prisma.productdetail.findMany({
       include: {
         invoice: true,
         product: true,
@@ -31,6 +32,7 @@ export async function GET() {
     });
     return new Response(JSON.stringify(productDetails), { status: 200 });
   } catch (error) {
+    console.error("GET /productdetail error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
     });

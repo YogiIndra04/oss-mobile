@@ -6,7 +6,7 @@ export async function GET(req, { params }) {
   try {
     const { id } = params;
 
-    const eventDetail = await prisma.eventDetail.findUnique({
+    const eventDetail = await prisma.eventdetail.findUnique({
       where: { event_detail_id: id },
       include: {
         invoice: true,
@@ -23,6 +23,7 @@ export async function GET(req, { params }) {
 
     return NextResponse.json(eventDetail, { status: 200 });
   } catch (error) {
+    console.error("GET /eventdetail/:id error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -34,13 +35,18 @@ export async function PUT(req, { params }) {
     const body = await req.json();
     const { quantity, total_event_cost } = body;
 
-    const updatedEventDetail = await prisma.eventDetail.update({
+    const updatedEventDetail = await prisma.eventdetail.update({
       where: { event_detail_id: id },
-      data: { quantity, total_event_cost },
+      data: {
+        quantity,
+        total_event_cost,
+        updated_at: new Date(), // 👍 update timestamp biar konsisten
+      },
     });
 
     return NextResponse.json(updatedEventDetail, { status: 200 });
   } catch (error) {
+    console.error("PUT /eventdetail/:id error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -50,7 +56,7 @@ export async function DELETE(req, { params }) {
   try {
     const { id } = params;
 
-    await prisma.eventDetail.delete({
+    await prisma.eventdetail.delete({
       where: { event_detail_id: id },
     });
 
@@ -59,6 +65,7 @@ export async function DELETE(req, { params }) {
       { status: 200 }
     );
   } catch (error) {
+    console.error("DELETE /eventdetail/:id error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

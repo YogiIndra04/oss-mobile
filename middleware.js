@@ -17,6 +17,7 @@ export async function middleware(req) {
     "/api/auth/register",
     "/api/auth/me",
     "/api/users",
+    "/api/supabase",
   ];
 
   if (publicPaths.some((path) => pathname.startsWith(path))) {

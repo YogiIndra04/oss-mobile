@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
-// ✅ CREATE EventDetail
+// CREATE EventDetail
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -14,7 +14,7 @@ export async function POST(req) {
       );
     }
 
-    const newEventDetail = await prisma.eventDetail.create({
+    const newEventDetail = await prisma.eventdetail.create({
       data: {
         invoice_id,
         event_id,
@@ -25,14 +25,15 @@ export async function POST(req) {
 
     return NextResponse.json(newEventDetail, { status: 201 });
   } catch (error) {
+    console.error("POST /eventdetail error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-// ✅ GET All EventDetails
+// GET All EventDetails
 export async function GET() {
   try {
-    const eventDetails = await prisma.eventDetail.findMany({
+    const eventDetails = await prisma.eventdetail.findMany({
       include: {
         invoice: true,
         event: true,
@@ -41,6 +42,7 @@ export async function GET() {
 
     return NextResponse.json(eventDetails, { status: 200 });
   } catch (error) {
+    console.error("GET /eventdetail error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
