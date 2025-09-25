@@ -74,7 +74,7 @@ export async function POST(req) {
         email_user,
         user_contact,
         user_address,
-        profile_image: fileUrl, // simpan URL supabase di MySQL
+        profile_image: fileUrl ? fileUrl.path : null, // ✅ simpan string, bukan object
       },
     });
 
@@ -96,3 +96,5 @@ export async function GET() {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+//testing miracast untuk upload file ke supabase
