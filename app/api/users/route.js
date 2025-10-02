@@ -2,10 +2,12 @@
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
-// GET all users
+// GET all users (sekalian include profile_user)
 export async function GET() {
   try {
-    const users = await prisma.users.findMany();
+    const users = await prisma.users.findMany({
+      include: { profile_user: true },
+    });
     return Response.json(users);
   } catch (error) {
     console.error(error);
@@ -13,7 +15,7 @@ export async function GET() {
   }
 }
 
-// CREATE user
+// CREATE user (otomatis buat profile_user)
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -25,7 +27,7 @@ export async function POST(req) {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Generate UUID for id_user
+    // Generate UUID untuk id_user
     const id_user = crypto.randomUUID();
 
     const newUser = await prisma.users.create({
@@ -34,7 +36,17 @@ export async function POST(req) {
         role_user,
         username,
         password: hashedPassword,
+        profile_user: {
+          create: {
+            user_name: username, // default sama dengan username
+            email_user: null,
+            user_contact: null,
+            user_address: null,
+            profile_image: null,
+          },
+        },
       },
+      include: { profile_user: true },
     });
 
     return Response.json(

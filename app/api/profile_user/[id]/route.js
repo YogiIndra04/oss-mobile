@@ -84,12 +84,12 @@ import {
 } from "@/lib/utils/uploadSupabase";
 import { NextResponse } from "next/server";
 
-// ✅ UPDATE profile_user
+// UPDATE profile_user
 export async function PUT(req, { params }) {
-  const { id } = params;
-
   try {
+    const { id } = params;
     const formData = await req.formData();
+
     const user_name = formData.get("user_name");
     const email_user = formData.get("email_user");
     const user_contact = formData.get("user_contact");
@@ -104,17 +104,17 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    let profileImagePath = oldProfile.profile_image;
+    let fileUrl = oldProfile.profile_image;
 
+    // kalau ada file baru → hapus lama lalu upload baru
     if (file && file.name) {
-      // hapus lama di Supabase kalau ada
-      if (oldProfile.profile_image) {
-        await deleteFromSupabase(oldProfile.profile_image);
+      if (oldProfile.profile_image?.includes("supabase.co")) {
+        const oldPath = oldProfile.profile_image.split("/invoice/")[1]; // ambil relative path
+        if (oldPath) await deleteFromSupabase(oldPath);
       }
 
-      // upload baru ke Supabase → simpan path, bukan public URL
-      const { path } = await uploadToSupabase(file, "profile_image");
-      profileImagePath = path;
+      const uploaded = await uploadToSupabase(file, "profile_image");
+      fileUrl = uploaded.publicUrl;
     }
 
     const updatedProfile = await prisma.profile_user.update({
@@ -124,23 +124,23 @@ export async function PUT(req, { params }) {
         email_user: email_user || oldProfile.email_user,
         user_contact: user_contact || oldProfile.user_contact,
         user_address: user_address || oldProfile.user_address,
-        profile_image: profileImagePath,
+        profile_image: fileUrl,
         updated_at: new Date(),
       },
     });
 
     return NextResponse.json(updatedProfile, { status: 200 });
   } catch (err) {
-    console.error("❌ Update profile error:", err);
+    console.error("❌ Update error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// ✅ DELETE profile_user
+// DELETE profile_user
 export async function DELETE(req, { params }) {
-  const { id } = params;
-
   try {
+    const { id } = params;
+
     const profile = await prisma.profile_user.findUnique({
       where: { id_user: id },
     });
@@ -149,9 +149,10 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    // hapus file di Supabase jika ada
-    if (profile.profile_image) {
-      await deleteFromSupabase(profile.profile_image); // langsung path
+    // hapus file di Supabase kalau ada
+    if (profile.profile_image?.includes("supabase.co")) {
+      const oldPath = profile.profile_image.split("/invoice/")[1];
+      if (oldPath) await deleteFromSupabase(oldPath);
     }
 
     await prisma.profile_user.delete({
@@ -160,7 +161,7 @@ export async function DELETE(req, { params }) {
 
     return NextResponse.json({ message: "Profile deleted" }, { status: 200 });
   } catch (err) {
-    console.error("❌ Delete profile error:", err);
+    console.error("❌ Delete error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

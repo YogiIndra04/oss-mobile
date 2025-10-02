@@ -50,6 +50,7 @@ import prisma from "@/lib/prisma";
 import { uploadToSupabase } from "@/lib/utils/uploadSupabase";
 import { NextResponse } from "next/server";
 
+// CREATE profile_user
 export async function POST(req) {
   try {
     const formData = await req.formData();
@@ -59,12 +60,13 @@ export async function POST(req) {
     const email_user = formData.get("email_user");
     const user_contact = formData.get("user_contact");
     const user_address = formData.get("user_address");
-    const file = formData.get("profile_image"); // File
+    const file = formData.get("profile_image");
 
     // ✅ upload ke Supabase
     let fileUrl = null;
-    if (file) {
-      fileUrl = await uploadToSupabase(file, "profile_image");
+    if (file && file.name) {
+      const uploaded = await uploadToSupabase(file, "profile_image");
+      fileUrl = uploaded.publicUrl; // simpan full public URL
     }
 
     const newProfile = await prisma.profile_user.create({
@@ -74,7 +76,7 @@ export async function POST(req) {
         email_user,
         user_contact,
         user_address,
-        profile_image: fileUrl ? fileUrl.path : null, // ✅ simpan string, bukan object
+        profile_image: fileUrl,
       },
     });
 
@@ -85,6 +87,7 @@ export async function POST(req) {
   }
 }
 
+// GET all profiles
 export async function GET() {
   try {
     const profiles = await prisma.profile_user.findMany({
