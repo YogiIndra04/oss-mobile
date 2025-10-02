@@ -24,11 +24,10 @@ export async function POST(request) {
       product_amount,
     } = body;
 
-    if (!type_status || !item_type || !product_title || !product_amount) {
+    if (!type_status || !item_type || !product_title) {
       return NextResponse.json(
         {
-          error:
-            "type_status, item_type, product_title, and product_amount are required",
+          error: "type_status, item_type, and product_title are required",
         },
         { status: 400 }
       );
@@ -40,7 +39,7 @@ export async function POST(request) {
         item_type,
         product_title,
         product_description,
-        product_amount,
+        product_amount: product_amount ?? 0, // ✅ fallback ke 0
       },
     });
 

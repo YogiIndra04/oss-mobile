@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 // ✅ GET product by ID
 export async function GET(request, { params }) {
   try {
-    const { id } = await params;
+    const { id } = params;
     const product = await prisma.product.findUnique({
       where: { product_id: id },
     });
@@ -23,7 +23,7 @@ export async function GET(request, { params }) {
 // ✅ UPDATE product
 export async function PUT(request, { params }) {
   try {
-    const { id } = await params;
+    const { id } = params;
     const body = await request.json();
     const {
       type_status,
@@ -40,7 +40,7 @@ export async function PUT(request, { params }) {
         item_type,
         product_title,
         product_description,
-        product_amount,
+        product_amount: product_amount ?? 0, // ✅ fallback ke 0
       },
     });
 
@@ -54,7 +54,7 @@ export async function PUT(request, { params }) {
 // ✅ DELETE product
 export async function DELETE(request, { params }) {
   try {
-    const { id } = await params;
+    const { id } = params;
 
     await prisma.product.delete({
       where: { product_id: id },
