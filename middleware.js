@@ -53,7 +53,12 @@ export async function middleware(req) {
         "/api/event_detail",
         "/api/payment_proofs",
       ],
-      konsultan: ["/api/companies", "/api/profile_user"],
+      konsultan: [
+        "/api/companies",
+        "/api/profile_user",
+        "/api/invoices",
+        "/api/product",
+      ],
     };
 
     const allowedPaths = roleAccess[payload.role_user] || [];
