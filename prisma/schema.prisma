@@ -111,18 +111,32 @@ model customer {
   updated_at       DateTime @updatedAt @db.Timestamp(0)
 }
 
-model product {
-  product_id         String   @id @default(uuid()) @db.Char(36)
-  type_status        ProductTypeStatus
-  item_type          ProductItemType
-  product_title      String   @db.VarChar(255)
-  product_description String? @db.Text
-  product_amount     Int
-  created_at         DateTime @default(now()) @db.Timestamp(0)
-  updated_at         DateTime @default(now()) @updatedAt @db.Timestamp(0)
+model categories {
+  category_id          String    @id @default(uuid()) @db.Char(36)
+  category_name        String    @db.VarChar(255)
+  category_description String?   @db.Text
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
 
-  ProductDetail productdetail[]
+  products             product[]
 }
+
+model product {
+  product_id          String     @id @default(uuid()) @db.Char(36)
+  category_id         String?    @db.Char(36)
+  product_title       String     @db.VarChar(255)
+  product_description String?    @db.Text
+  product_amount      Int
+  item_type           ProductItemType
+  type_status         ProductTypeStatus
+  created_at          DateTime   @default(now())
+  updated_at          DateTime   @updatedAt
+
+  category categories? @relation(fields: [category_id], references: [category_id])
+
+  productdetail productdetail[]
+}
+
 
 model events {
   event_id          String   @id @default(uuid()) @db.Char(36)

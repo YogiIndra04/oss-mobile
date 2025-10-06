@@ -52,12 +52,14 @@ export async function middleware(req) {
         "/api/product_detail",
         "/api/event_detail",
         "/api/payment_proofs",
+        "/api/categories",
       ],
       konsultan: [
         "/api/companies",
         "/api/profile_user",
         "/api/invoices",
         "/api/product",
+        "/api/categories",
       ],
     };
 
