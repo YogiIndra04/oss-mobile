@@ -15,8 +15,9 @@ export async function GET() {
 
     const formatted = categories.map((cat) => ({
       category_id: cat.category_id,
-      category_name:
-        cat.category_name.charAt(0).toUpperCase() + cat.category_name.slice(1),
+      category_name: cat.category_name,
+
+      // cat.category_name.charAt(0).toUpperCase() + cat.category_name.slice(1),
       category_description: cat.category_description,
       total_products: cat.products.length,
       created_at: cat.created_at,
@@ -58,7 +59,7 @@ export async function POST(req) {
 
     const newCategory = await prisma.categories.create({
       data: {
-        category_name: category_name.trim().toLowerCase(),
+        category_name: category_name,
         category_description: category_description || null,
       },
     });
