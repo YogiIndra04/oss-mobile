@@ -89,10 +89,21 @@ import supabase from "@/lib/supabase";
 import { uploadToSupabase } from "@/lib/utils/uploadSupabase";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
+import { verifyJwt } from "@/lib/jwt";
 
 // ✅ CREATE Invoice (pakai form-data)
 export async function POST(req) {
   try {
+    // Ambil user dari JWT untuk set created_by_user_id
+    const token = req.headers.get("authorization")?.split(" ")[1];
+    const decoded = token ? verifyJwt(token) : null;
+    if (!decoded?.id_user) {
+      return NextResponse.json(
+        { error: "Unauthorized: missing/invalid token" },
+        { status: 401 }
+      );
+    }
+
     const formData = await req.formData();
 
     // Ambil field dari form-data
@@ -211,8 +222,18 @@ export async function POST(req) {
       });
     }
 
+    // Set created_by_user_id setelah create, lalu kembalikan invoice yang sudah ter-update
+    await prisma.invoices.update({
+      where: { invoice_id: newInvoice.invoice_id },
+      data: { created_by_user_id: decoded.id_user },
+    });
+
+    const invoiceWithCreator = await prisma.invoices.findUnique({
+      where: { invoice_id: newInvoice.invoice_id },
+    });
+
     return NextResponse.json(
-      { invoice: newInvoice, barcode: newBarcode },
+      { invoice: invoiceWithCreator, barcode: newBarcode },
       { status: 201 }
     );
   } catch (error) {
@@ -227,10 +248,35 @@ export async function POST(req) {
 // ✅ GET All Invoices
 export async function GET() {
   try {
-    const invoices = await prisma.invoices.findMany({
-      include: { barcodes: true },
+    // NOTE(maint): sertakan relasi createdBy agar bisa expose field created_by
+    const invoicesRaw = await prisma.invoices.findMany({
+      include: {
+        barcodes: true,
+        createdBy: {
+          select: {
+            id_user: true,
+            username: true,
+            profile_user: { select: { user_name: true } },
+          },
+        },
+      },
       orderBy: { created_at: "desc" },
     });
+
+    // Normalisasi respons: tambahkan created_by (string) dan pastikan created_by_user_id tersedia
+    // Preferensi nama: gunakan profile_user.user_name jika ada, fallback ke username
+    const invoices = invoicesRaw.map((inv) => {
+      const creatorName =
+        inv.createdBy?.profile_user?.user_name || inv.createdBy?.username || null;
+      const creatorId = inv.created_by_user_id || inv.createdBy?.id_user || null;
+      const { createdBy, ...rest } = inv;
+      return {
+        ...rest,
+        created_by_user_id: creatorId,
+        created_by: creatorName,
+      };
+    });
+
     return NextResponse.json(invoices, { status: 200 });
   } catch (error) {
     console.error("GET /invoices error:", error);

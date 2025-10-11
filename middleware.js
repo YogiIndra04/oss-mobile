@@ -49,6 +49,7 @@ export async function middleware(req) {
         "/api/product",
         "/api/events",
         "/api/invoices",
+        "/api/invoice_template",
         "/api/product_detail",
         "/api/event_detail",
         "/api/payment_proofs",
@@ -59,6 +60,7 @@ export async function middleware(req) {
         "/api/profile_user",
         "/api/invoices",
         "/api/product",
+        "/api/invoice_template",
         "/api/categories",
       ],
     };
