@@ -1,7 +1,9 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { uploadTemplateFile, deleteFromSupabase } from "@/lib/utils/uploadSupabase";
+import { uploadTemplateFile, deleteFromSupabase, uploadBufferToSupabase } from "@/lib/utils/uploadSupabase";
 import { verifyJwt } from "@/lib/jwt";
+import supabase from "@/lib/supabase";
+import sharp from "sharp";
 
 // Create invoice template (form-data)
 export async function POST(req) {
@@ -34,17 +36,37 @@ export async function POST(req) {
 
     // Upload files to Supabase (folder templates/<company_id>) when present
     const sub = company_id;
+    const process = async (f, kind) => {
+      if (!f || !f.name) return null;
+      const buf = Buffer.from(await f.arrayBuffer());
+      let pipeline = sharp(buf);
+      switch (kind) {
+        case "logo":
+          pipeline = pipeline.resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true });
+          break;
+        case "header_client":
+        case "footer_client":
+        case "header_partner":
+        case "footer_partner":
+          pipeline = pipeline.resize({ width: 2000, height: 400, fit: "cover" });
+          break;
+        case "background":
+          pipeline = pipeline.resize({ width: 1200, height: 1700, fit: "cover" });
+          break;
+        default:
+          pipeline = pipeline.resize({ width: 1600, fit: "inside", withoutEnlargement: true });
+      }
+      const out = await pipeline.png({ compressionLevel: 9, palette: true, effort: 10 }).toBuffer();
+      return uploadBufferToSupabase(out, `templates/${sub}`, "png", "image/png");
+    };
+
     const uploads = {
-      image_logo: file_logo && file_logo.name ? await uploadTemplateFile(file_logo, sub) : null,
-      background: file_background && file_background.name ? await uploadTemplateFile(file_background, sub) : null,
-      header_client:
-        file_header_client && file_header_client.name ? await uploadTemplateFile(file_header_client, sub) : null,
-      footer_client:
-        file_footer_client && file_footer_client.name ? await uploadTemplateFile(file_footer_client, sub) : null,
-      header_partner:
-        file_header_partner && file_header_partner.name ? await uploadTemplateFile(file_header_partner, sub) : null,
-      footer_partner:
-        file_footer_partner && file_footer_partner.name ? await uploadTemplateFile(file_footer_partner, sub) : null,
+      image_logo: await process(file_logo, "logo"),
+      background: await process(file_background, "background"),
+      header_client: await process(file_header_client, "header_client"),
+      footer_client: await process(file_footer_client, "footer_client"),
+      header_partner: await process(file_header_partner, "header_partner"),
+      footer_partner: await process(file_footer_partner, "footer_partner"),
     };
 
     const created = await prisma.invoice_template.create({
@@ -60,7 +82,19 @@ export async function POST(req) {
       },
     });
 
-    return NextResponse.json(created, { status: 201 });
+    // Tambahkan public URL untuk kemudahan preview di mobile
+    const toPublic = (p) => (p ? supabase.storage.from("invoice").getPublicUrl(p).data.publicUrl : null);
+    const withUrls = {
+      ...created,
+      image_logo_url: toPublic(created.image_logo),
+      background_url: toPublic(created.background),
+      header_client_url: toPublic(created.header_client),
+      footer_client_url: toPublic(created.footer_client),
+      header_partner_url: toPublic(created.header_partner),
+      footer_partner_url: toPublic(created.footer_partner),
+    };
+
+    return NextResponse.json(withUrls, { status: 201 });
   } catch (error) {
     console.error("POST /invoice_template error:", error);
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
@@ -74,10 +108,19 @@ export async function GET() {
       orderBy: { created_at: "desc" },
       include: { company: { select: { company_id: true, business_name: true, company_name: true } } },
     });
-    return NextResponse.json(list, { status: 200 });
+    const toPublic = (p) => (p ? supabase.storage.from("invoice").getPublicUrl(p).data.publicUrl : null);
+    const data = list.map((t) => ({
+      ...t,
+      image_logo_url: toPublic(t.image_logo),
+      background_url: toPublic(t.background),
+      header_client_url: toPublic(t.header_client),
+      footer_client_url: toPublic(t.footer_client),
+      header_partner_url: toPublic(t.header_partner),
+      footer_partner_url: toPublic(t.footer_partner),
+    }));
+    return NextResponse.json(data, { status: 200 });
   } catch (error) {
     console.error("GET /invoice_template error:", error);
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
   }
 }
-

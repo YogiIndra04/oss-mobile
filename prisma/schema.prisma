@@ -228,8 +228,8 @@ model productdetail {
   updated_at           DateTime @updatedAt @db.Timestamp(0)
 
   //  gunakan nama model persis seperti yang ada
-  invoice invoices @relation(fields: [invoice_id], references: [invoice_id])
-  product product  @relation(fields: [product_id], references: [product_id])
+  invoice invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
+  product product  @relation(fields: [product_id], references: [product_id], onDelete: Restrict)
 
   @@unique([invoice_id, product_id])
   @@map("product_detail")

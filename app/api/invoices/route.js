@@ -1,100 +1,13 @@
-// import prisma from "@/lib/prisma";
-// import { generateAndSaveBarcode } from "@/lib/utils/barcodeHandler"; // ✅ import utils barcode
-// import { NextResponse } from "next/server";
-
-// // CREATE Invoice
-// export async function POST(req) {
-//   try {
-//     const body = await req.json();
-//     const {
-//       invoice_number,
-//       invoice_type,
-//       customer_name,
-//       customer_address,
-//       unpaid,
-//       total_amount,
-//       payment_status,
-//       invoice_creation_date,
-//       payment_date,
-//       completion_date,
-//       due_date,
-//       currency_accepted,
-//       currency_exchange_rate,
-//       currency_exchange_rate_date,
-//       pdf_path,
-//     } = body;
-
-//     // ✅ Buat invoice baru
-//     const newInvoice = await prisma.invoices.create({
-//       data: {
-//         invoice_number,
-//         invoice_type,
-//         customer_name,
-//         customer_address,
-//         unpaid,
-//         total_amount,
-//         payment_status,
-//         invoice_creation_date: new Date(invoice_creation_date),
-//         payment_date: payment_date ? new Date(payment_date) : null,
-//         completion_date: completion_date ? new Date(completion_date) : null,
-//         due_date: due_date ? new Date(due_date) : null,
-//         currency_accepted,
-//         currency_exchange_rate,
-//         currency_exchange_rate_date: currency_exchange_rate_date
-//           ? new Date(currency_exchange_rate_date)
-//           : null,
-//         pdf_path,
-//       },
-//     });
-
-//     // ✅ Generate barcode untuk invoice ini
-//     const barcodeLink = `https://yourdomain.com/invoices/${newInvoice.invoice_id}`; // bisa diarahkan ke halaman invoice
-//     const filePath = await generateAndSaveBarcode(
-//       barcodeLink,
-//       `barcode-${newInvoice.invoice_id}`
-//     );
-
-//     // ✅ Simpan ke tabel barcodes
-//     await prisma.barcodes.create({
-//       data: {
-//         invoice_id: newInvoice.invoice_id,
-//         document_type: "Invoice",
-//         barcode_link: barcodeLink,
-//         barcode_image_path: filePath,
-//       },
-//     });
-
-//     return NextResponse.json(newInvoice, { status: 201 });
-//   } catch (error) {
-//     console.error("POST /invoices error:", error);
-//     return NextResponse.json({ error: error.message }, { status: 500 });
-//   }
-// }
-
-// // GET All Invoices
-// export async function GET() {
-//   try {
-//     const invoices = await prisma.invoices.findMany({
-//       include: { barcodes: true }, // ✅ supaya bisa langsung lihat barcode juga
-//     });
-//     return NextResponse.json(invoices, { status: 200 });
-//   } catch (error) {
-//     console.error("GET /invoices error:", error);
-//     return NextResponse.json({ error: error.message }, { status: 500 });
-//   }
-// }
-
+import { verifyJwt } from "@/lib/jwt";
 import prisma from "@/lib/prisma";
 import supabase from "@/lib/supabase";
 import { uploadToSupabase } from "@/lib/utils/uploadSupabase";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
-import { verifyJwt } from "@/lib/jwt";
 
-// ✅ CREATE Invoice (pakai form-data)
+// CREATE Invoice (multipart/form-data)
 export async function POST(req) {
   try {
-    // Ambil user dari JWT untuk set created_by_user_id
     const token = req.headers.get("authorization")?.split(" ")[1];
     const decoded = token ? verifyJwt(token) : null;
     if (!decoded?.id_user) {
@@ -106,7 +19,6 @@ export async function POST(req) {
 
     const formData = await req.formData();
 
-    // Ambil field dari form-data
     const invoice_number = formData.get("invoice_number");
     const invoice_type = formData.get("invoice_type");
     const customer_name = formData.get("customer_name");
@@ -120,12 +32,9 @@ export async function POST(req) {
     const due_date = formData.get("due_date");
     const currency_accepted = formData.get("currency_accepted");
     const currency_exchange_rate = formData.get("currency_exchange_rate");
-    const currency_exchange_rate_date = formData.get(
-      "currency_exchange_rate_date"
-    );
-    const file = formData.get("pdf_path"); // File PDF
+    const currency_exchange_rate_date = formData.get("currency_exchange_rate_date");
+    const file = formData.get("pdf_path");
 
-    // ✅ Validasi field wajib
     if (
       !invoice_number ||
       !invoice_type ||
@@ -143,7 +52,6 @@ export async function POST(req) {
       );
     }
 
-    // ✅ Cek apakah invoice_number sudah ada
     const existing = await prisma.invoices.findUnique({
       where: { invoice_number },
     });
@@ -154,16 +62,16 @@ export async function POST(req) {
       );
     }
 
-    // ✅ Upload file PDF ke Supabase (jika ada)
+    // Upload PDF to Supabase if provided
     let pdfPath = null;
     let pdfUrl = null;
     if (file && file.name) {
       const { path, publicUrl } = await uploadToSupabase(file, "invoices");
-      pdfPath = path; // simpan relative path ke DB
-      pdfUrl = publicUrl; // URL publik untuk barcode
+      pdfPath = path;
+      pdfUrl = publicUrl;
     }
 
-    // ✅ Buat invoice baru
+    // Create invoice
     const newInvoice = await prisma.invoices.create({
       data: {
         invoice_number,
@@ -186,11 +94,13 @@ export async function POST(req) {
         currency_exchange_rate_date: currency_exchange_rate_date
           ? new Date(currency_exchange_rate_date)
           : null,
-        pdf_path: pdfPath, // ✅ simpan relative path
+        pdf_path: pdfUrl || null,
       },
     });
 
-    // ✅ Generate barcode hanya kalau ada PDF
+    // FE is responsible for embedding QR into the PDF; backend stores as-is
+
+    // Generate and store barcode image
     let newBarcode = null;
     if (pdfUrl) {
       const barcodeBuffer = await QRCode.toBuffer(pdfUrl, {
@@ -206,23 +116,27 @@ export async function POST(req) {
           contentType: "image/png",
           upsert: true,
         });
-
       if (uploadError) {
         console.error("Supabase upload error:", uploadError);
         throw uploadError;
       }
 
+      const pub = supabase.storage
+        .from("invoice")
+        .getPublicUrl(barcodeFileName);
+      const barcodePublicUrl = pub?.data?.publicUrl || null;
+
       newBarcode = await prisma.barcodes.create({
         data: {
           invoice_id: newInvoice.invoice_id,
           document_type: "Invoice",
-          barcode_link: pdfUrl, // URL publik PDF
-          barcode_image_path: barcodeFileName, // path barcode di Supabase
+          barcode_link: newInvoice?.pdf_path || pdfUrl,
+          barcode_image_path: barcodePublicUrl || barcodeFileName,
         },
       });
     }
 
-    // Set created_by_user_id setelah create, lalu kembalikan invoice yang sudah ter-update
+    // Attach creator
     await prisma.invoices.update({
       where: { invoice_id: newInvoice.invoice_id },
       data: { created_by_user_id: decoded.id_user },
@@ -232,8 +146,30 @@ export async function POST(req) {
       where: { invoice_id: newInvoice.invoice_id },
     });
 
+    // Public URL for barcode
+    let barcodeImageUrl = null;
+    if (newBarcode?.barcode_image_path) {
+      if (newBarcode.barcode_image_path.startsWith("http")) {
+        barcodeImageUrl = newBarcode.barcode_image_path;
+      } else {
+        const pub = supabase.storage
+          .from("invoice")
+          .getPublicUrl(newBarcode.barcode_image_path);
+        barcodeImageUrl = pub?.data?.publicUrl || null;
+      }
+    }
+
     return NextResponse.json(
-      { invoice: invoiceWithCreator, barcode: newBarcode },
+      {
+        invoice: {
+          ...invoiceWithCreator,
+          created_by_user_id: decoded.id_user,
+        },
+        barcode: newBarcode
+          ? { ...newBarcode, barcode_image_url: barcodeImageUrl }
+          : null,
+        pdf_public_url: pdfUrl || null,
+      },
       { status: 201 }
     );
   } catch (error) {
@@ -245,10 +181,9 @@ export async function POST(req) {
   }
 }
 
-// ✅ GET All Invoices
+// GET All Invoices
 export async function GET() {
   try {
-    // NOTE(maint): sertakan relasi createdBy agar bisa expose field created_by
     const invoicesRaw = await prisma.invoices.findMany({
       include: {
         barcodes: true,
@@ -263,15 +198,44 @@ export async function GET() {
       orderBy: { created_at: "desc" },
     });
 
-    // Normalisasi respons: tambahkan created_by (string) dan pastikan created_by_user_id tersedia
-    // Preferensi nama: gunakan profile_user.user_name jika ada, fallback ke username
     const invoices = invoicesRaw.map((inv) => {
       const creatorName =
         inv.createdBy?.profile_user?.user_name || inv.createdBy?.username || null;
       const creatorId = inv.created_by_user_id || inv.createdBy?.id_user || null;
       const { createdBy, ...rest } = inv;
+
+      const barcodes = Array.isArray(rest.barcodes)
+        ? rest.barcodes.map((b) => {
+            if (!b?.barcode_image_path) return b;
+            if (b.barcode_image_path && b.barcode_image_path.startsWith("http")) {
+              return { ...b, barcode_image_url: b.barcode_image_path };
+            } else {
+              const pub = supabase.storage
+                .from("invoice")
+                .getPublicUrl(b.barcode_image_path);
+              return { ...b, barcode_image_url: pub?.data?.publicUrl || null };
+            }
+          })
+        : rest.barcodes;
+
+      let pdf_public_url = null;
+      if (rest.pdf_path) {
+        try {
+          if (rest.pdf_path.startsWith("http")) {
+            pdf_public_url = rest.pdf_path;
+          } else {
+            const pub = supabase.storage
+              .from("invoice")
+              .getPublicUrl(rest.pdf_path);
+            pdf_public_url = pub?.data?.publicUrl || null;
+          }
+        } catch (_) {}
+      }
+
       return {
         ...rest,
+        barcodes,
+        pdf_public_url,
         created_by_user_id: creatorId,
         created_by: creatorName,
       };

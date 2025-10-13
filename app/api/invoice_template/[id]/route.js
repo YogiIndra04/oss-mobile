@@ -1,7 +1,9 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { uploadTemplateFile, deleteFromSupabase } from "@/lib/utils/uploadSupabase";
+import { uploadTemplateFile, deleteFromSupabase, uploadBufferToSupabase } from "@/lib/utils/uploadSupabase";
 import { verifyJwt } from "@/lib/jwt";
+import supabase from "@/lib/supabase";
+import sharp from "sharp";
 
 // Get by id
 export async function GET(req, { params }) {
@@ -12,7 +14,17 @@ export async function GET(req, { params }) {
       include: { company: { select: { company_id: true, business_name: true, company_name: true } } },
     });
     if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json(data, { status: 200 });
+    const toPublic = (p) => (p ? supabase.storage.from("invoice").getPublicUrl(p).data.publicUrl : null);
+    const withUrls = {
+      ...data,
+      image_logo_url: toPublic(data.image_logo),
+      background_url: toPublic(data.background),
+      header_client_url: toPublic(data.header_client),
+      footer_client_url: toPublic(data.footer_client),
+      header_partner_url: toPublic(data.header_partner),
+      footer_partner_url: toPublic(data.footer_partner),
+    };
+    return NextResponse.json(withUrls, { status: 200 });
   } catch (error) {
     console.error("GET /invoice_template/[id] error:", error);
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
@@ -47,11 +59,33 @@ export async function PUT(req, { params }) {
       ["footer_partner", "footer_partner"],
     ];
 
+    const process = async (buf, kind) => {
+      let pipeline = sharp(buf);
+      switch (kind) {
+        case "image_logo":
+          pipeline = pipeline.resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true });
+          break;
+        case "header_client":
+        case "footer_client":
+        case "header_partner":
+        case "footer_partner":
+          pipeline = pipeline.resize({ width: 2000, height: 400, fit: "cover" });
+          break;
+        case "background":
+          pipeline = pipeline.resize({ width: 1200, height: 1700, fit: "cover" });
+          break;
+        default:
+          pipeline = pipeline.resize({ width: 1600, fit: "inside", withoutEnlargement: true });
+      }
+      return pipeline.png({ compressionLevel: 9, palette: true, effort: 10 }).toBuffer();
+    };
+
     for (const [formKey, field] of fileMap) {
       const f = fd.get(formKey);
       if (f && f.name) {
-        // upload baru dan hapus lama jika ada
-        const up = await uploadTemplateFile(f, sub);
+        const buf = Buffer.from(await f.arrayBuffer());
+        const out = await process(buf, field);
+        const up = await uploadBufferToSupabase(out, `templates/${sub}`, "png", "image/png");
         if (existing[field]) {
           try { await deleteFromSupabase(existing[field]); } catch {}
         }
@@ -60,7 +94,17 @@ export async function PUT(req, { params }) {
     }
 
     const updated = await prisma.invoice_template.update({ where: { template_id: id }, data: nextData });
-    return NextResponse.json(updated, { status: 200 });
+    const toPublic = (p) => (p ? supabase.storage.from("invoice").getPublicUrl(p).data.publicUrl : null);
+    const withUrls = {
+      ...updated,
+      image_logo_url: toPublic(updated.image_logo),
+      background_url: toPublic(updated.background),
+      header_client_url: toPublic(updated.header_client),
+      footer_client_url: toPublic(updated.footer_client),
+      header_partner_url: toPublic(updated.header_partner),
+      footer_partner_url: toPublic(updated.footer_partner),
+    };
+    return NextResponse.json(withUrls, { status: 200 });
   } catch (error) {
     console.error("PUT /invoice_template/[id] error:", error);
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
@@ -98,4 +142,3 @@ export async function DELETE(req, { params }) {
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
   }
 }
-

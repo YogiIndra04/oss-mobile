@@ -54,6 +54,7 @@ export async function middleware(req) {
         "/api/event_detail",
         "/api/payment_proofs",
         "/api/categories",
+        "/api/barcodes",
       ],
       konsultan: [
         "/api/companies",
@@ -62,6 +63,8 @@ export async function middleware(req) {
         "/api/product",
         "/api/invoice_template",
         "/api/categories",
+        "/api/customer",
+        "/api/barcodes",
       ],
     };
 

@@ -4,20 +4,40 @@ import prisma from "@/lib/prisma";
 export async function GET(req, { params }) {
   try {
     const { id } = params;
-    const productDetail = await prisma.productdetail.findUnique({
+    // Fetch without includes first to avoid Prisma error on broken relations
+    const base = await prisma.productdetail.findUnique({
       where: { product_detail_id: id },
-      include: {
-        invoice: true,
-        product: true,
+      select: {
+        product_detail_id: true,
+        invoice_id: true,
+        product_id: true,
+        quantity: true,
+        total_product_amount: true,
+        created_at: true,
+        updated_at: true,
       },
     });
-    if (!productDetail) {
+    if (!base) {
       return new Response(
         JSON.stringify({ error: "ProductDetail not found" }),
         { status: 404 }
       );
     }
-    return new Response(JSON.stringify(productDetail), { status: 200 });
+
+    // Fetch related entities separately; product may be null if orphan
+    const [invoice, product] = await Promise.all([
+      prisma.invoices.findUnique({ where: { invoice_id: base.invoice_id } }),
+      prisma.product.findUnique({ where: { product_id: base.product_id } }),
+    ]);
+
+    return new Response(
+      JSON.stringify({
+        ...base,
+        invoice,
+        product,
+      }),
+      { status: 200 }
+    );
   } catch (error) {
     console.error("GET /productdetail/:id error:", error);
     return new Response(JSON.stringify({ error: error.message }), {

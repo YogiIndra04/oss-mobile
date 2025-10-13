@@ -1,4 +1,6 @@
 // import prisma from "@/lib/prisma";
+
+// import prisma from "@/lib/prisma";
 // import { NextResponse } from "next/server";
 
 // // GET Invoice by ID
@@ -119,39 +121,40 @@ export async function PUT(req, { params }) {
     // Kalau ada file PDF baru → upload ke Supabase
     if (file && file.name) {
       const { path, publicUrl } = await uploadToSupabase(file, "invoices");
-      pdfPath = path; // simpan relative path di DB
-      pdfUrl = publicUrl; // public URL untuk barcode
+      pdfPath = path; // relative path in bucket
+      pdfUrl = publicUrl; // public URL
     } else if (pdfPath) {
-      // kalau tidak ada file baru, pakai pdf lama
-      const { data } = supabase.storage.from("invoice").getPublicUrl(pdfPath);
-      pdfUrl = data?.publicUrl;
+      pdfUrl = pdfPath;
     }
 
     // Update invoice di DB
     const updatedInvoice = await prisma.invoices.update({
       where: { invoice_id: id },
       data: {
-        invoice_number,
-        invoice_type,
-        customer_name,
+        invoice_number: (invoice_number && invoice_number.trim()) ? invoice_number.trim() : oldInvoice.invoice_number,
+        invoice_type: (invoice_type && invoice_type.trim()) ? invoice_type.trim() : oldInvoice.invoice_type,
+        customer_name: (customer_name && customer_name.trim()) ? customer_name.trim() : oldInvoice.customer_name,
         customer_address,
         unpaid: unpaid ? Number(unpaid) : null,
-        total_amount: total_amount ? Number(total_amount) : 0,
-        payment_status,
+        total_amount: (total_amount !== null && total_amount !== undefined && String(total_amount).length > 0)
+          ? Number(total_amount)
+          : oldInvoice.total_amount,
+        payment_status: (payment_status && payment_status.trim()) ? payment_status.trim() : oldInvoice.payment_status,
         invoice_creation_date: invoice_creation_date
           ? new Date(invoice_creation_date)
           : oldInvoice.invoice_creation_date,
         payment_date: payment_date ? new Date(payment_date) : null,
         completion_date: completion_date ? new Date(completion_date) : null,
         due_date: due_date ? new Date(due_date) : null,
-        currency_accepted,
+        currency_accepted: (currency_accepted && currency_accepted.trim()) ? currency_accepted.trim() : oldInvoice.currency_accepted,
         currency_exchange_rate: currency_exchange_rate
           ? Number(currency_exchange_rate)
           : null,
         currency_exchange_rate_date: currency_exchange_rate_date
           ? new Date(currency_exchange_rate_date)
           : null,
-        pdf_path: pdfPath, // ✅ relative path ke Supabase
+        // simpan full public URL agar FE bisa langsung pakai
+        pdf_path: pdfUrl || oldInvoice.pdf_path,
         updated_at: new Date(),
       },
     });
@@ -172,18 +175,22 @@ export async function PUT(req, { params }) {
           upsert: true,
         });
 
+      const { data: pub } = supabase.storage.from("invoice").getPublicUrl(barcodeFileName);
+      const barcodePublicUrl = pub?.publicUrl || null;
+
+      // FE embeds QR into PDF; backend stores as-is, only syncs links
       await prisma.barcodes.upsert({
         where: { invoice_id: id },
         update: {
-          barcode_link: pdfUrl,
-          barcode_image_path: barcodeFileName,
+          barcode_link: (updatedInvoice?.pdf_path || pdfUrl),
+          barcode_image_path: barcodePublicUrl || barcodeFileName,
           updated_at: new Date(),
         },
         create: {
           invoice_id: id,
           document_type: "Invoice",
-          barcode_link: pdfUrl,
-          barcode_image_path: barcodeFileName,
+          barcode_link: (updatedInvoice?.pdf_path || pdfUrl),
+          barcode_image_path: barcodePublicUrl || barcodeFileName,
         },
       });
     }
@@ -194,3 +201,106 @@ export async function PUT(req, { params }) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// GET Invoice by ID (with barcode public URLs)
+export async function GET(_req, { params }) {
+  try {
+    const id = params?.id;
+    if (!id) {
+      return NextResponse.json({ error: "invoice_id wajib diisi" }, { status: 400 });
+    }
+
+    const inv = await prisma.invoices.findUnique({
+      where: { invoice_id: id },
+      include: {
+        barcodes: true,
+        createdBy: {
+          select: {
+            id_user: true,
+            username: true,
+            profile_user: { select: { user_name: true } },
+          },
+        },
+      },
+    });
+
+    if (!inv) {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    }
+
+    const creatorName =
+      inv.createdBy?.profile_user?.user_name || inv.createdBy?.username || null;
+    const creatorId = inv.created_by_user_id || inv.createdBy?.id_user || null;
+    const { createdBy, ...rest } = inv;
+
+    const barcodes = Array.isArray(rest.barcodes)
+      ? rest.barcodes.map((b) => {
+          if (!b?.barcode_image_path) return b;
+          if (b.barcode_image_path.startsWith('http')) {
+            return { ...b, barcode_image_url: b.barcode_image_path };
+          }
+          const pub = supabase.storage
+            .from('invoice')
+            .getPublicUrl(b.barcode_image_path);
+          return { ...b, barcode_image_url: pub?.data?.publicUrl || null };
+        })
+      : rest.barcodes;
+
+    return NextResponse.json(
+      {
+        ...rest,
+        barcodes,
+        created_by_user_id: creatorId,
+        created_by: creatorName,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("GET /invoices/[id] error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// DELETE Invoice by ID (cleans up barcode files/rows)
+export async function DELETE(_req, { params }) {
+  try {
+    const id = params?.id;
+    if (!id) {
+      return NextResponse.json({ error: "invoice_id wajib diisi" }, { status: 400 });
+    }
+
+    const existing = await prisma.invoices.findUnique({
+      where: { invoice_id: id },
+      include: { barcodes: true },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    }
+
+    // Remove barcode image files from Supabase and delete rows
+    if (Array.isArray(existing.barcodes) && existing.barcodes.length) {
+      const paths = existing.barcodes
+        .map((b) => {
+          if (!b?.barcode_image_path) return null;
+          return b.barcode_image_path.includes('/invoice/')
+            ? b.barcode_image_path.split('/invoice/')[1]
+            : b.barcode_image_path;
+        })
+        .filter(Boolean);
+      if (paths.length) {
+        await supabase.storage.from("invoice").remove(paths);
+      }
+      await prisma.barcodes.deleteMany({ where: { invoice_id: id } });
+    }
+
+    // Delete the invoice (details may cascade per schema)
+    await prisma.invoices.delete({ where: { invoice_id: id } });
+
+    return NextResponse.json({ message: "Invoice deleted" }, { status: 200 });
+  } catch (error) {
+    console.error("DELETE /invoices/[id] error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+

@@ -157,6 +157,17 @@ export async function DELETE(_req, { params }) {
 
     await ensureProductExists(id);
 
+    // Prevent deleting products that are already used in invoices (avoid orphans)
+    const detailCount = await prisma.productdetail.count({
+      where: { product_id: id },
+    });
+    if (detailCount > 0) {
+      return NextResponse.json(
+        { error: "Produk sudah digunakan pada invoice dan tidak dapat dihapus" },
+        { status: 409 }
+      );
+    }
+
     await prisma.product.delete({
       where: { product_id: id },
     });
