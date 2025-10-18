@@ -1,0 +1,10 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["package.json"],
+      "url": "./.vscode/schemas/package.schema.json"
+    }
+  ],
+  "json.schemaDownload.enable": false
+}
+
