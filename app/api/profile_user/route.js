@@ -47,7 +47,7 @@
 // }
 
 import prisma from "@/lib/prisma";
-import { uploadToSupabase } from "@/lib/utils/uploadSupabase";
+import { uploadToStorage } from "@/lib/utils/uploadStorage";
 import { NextResponse } from "next/server";
 
 // CREATE profile_user
@@ -62,11 +62,11 @@ export async function POST(req) {
     const user_address = formData.get("user_address");
     const file = formData.get("profile_image");
 
-    // ✅ upload ke Supabase
+    // ✅ upload ke Storage
     let fileUrl = null;
     if (file && file.name) {
-      const uploaded = await uploadToSupabase(file, "profile_image");
-      fileUrl = uploaded.publicUrl; // simpan full public URL
+      const nameHint = `profile_image-${id_user || Date.now()}.${(file.name.split('.').pop() || 'png')}`;
+      const uploaded = await uploadToStorage(file, "uploads", nameHint);
     }
 
     const newProfile = await prisma.profile_user.create({
@@ -100,4 +100,8 @@ export async function GET() {
   }
 }
 
-//testing miracast untuk upload file ke supabase
+//testing miracast untuk upload file ke storage
+
+
+
+

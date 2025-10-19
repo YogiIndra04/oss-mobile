@@ -1,9 +1,9 @@
 import prisma from "@/lib/prisma";
-import supabase from "@/lib/supabase";
+import { uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 
-// CREATE barcode image in Supabase and record in DB
+// CREATE barcode image in storage and record in DB
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -23,21 +23,10 @@ export async function POST(req) {
       errorCorrectionLevel: "H",
     });
 
-    // 2) Upload to Supabase storage (bucket: invoice)
-    const fileName = `barcodes/${invoice_id}.png`;
-    const { error: uploadError } = await supabase.storage
-      .from("invoice")
-      .upload(fileName, qrBuffer, {
-        contentType: "image/png",
-        upsert: true,
-      });
-    if (uploadError) throw uploadError;
-
-    // 3) Resolve public URL
-    const { data: publicRes } = supabase.storage
-      .from("invoice")
-      .getPublicUrl(fileName);
-    const publicUrl = publicRes?.publicUrl || null;
+    // 2) Upload ke Storage OSS (semua dalam folder 'uploads') dengan nama yang jelas
+    const nameHint = `barcode-${invoice_id || "no-invoice"}.png`;
+    const up = await uploadBufferToStorage(qrBuffer, "uploads", "png", "image/png", nameHint);
+    const publicUrl = up?.publicUrl || null;
 
     // 4) Determine linkForQr: if invoice_id present, force to invoice.pdf_path; else use provided barcode_link
     let linkForQr = barcode_link || null;
@@ -99,3 +88,4 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+

@@ -1,8 +1,7 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { uploadTemplateFile, deleteFromSupabase, uploadBufferToSupabase } from "@/lib/utils/uploadSupabase";
+import { uploadTemplateFileToStorage, deleteFromStorage, uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { verifyJwt } from "@/lib/jwt";
-import supabase from "@/lib/supabase";
 import sharp from "sharp";
 
 // Create invoice template (form-data)
@@ -34,7 +33,7 @@ export async function POST(req) {
       );
     }
 
-    // Upload files to Supabase (folder templates/<company_id>) when present
+    // Upload files to Storage OSS (semua ke 'uploads' dengan penamaan jelas)
     const sub = company_id;
     const process = async (f, kind) => {
       if (!f || !f.name) return null;
@@ -57,7 +56,8 @@ export async function POST(req) {
           pipeline = pipeline.resize({ width: 1600, fit: "inside", withoutEnlargement: true });
       }
       const out = await pipeline.png({ compressionLevel: 9, palette: true, effort: 10 }).toBuffer();
-      return uploadBufferToSupabase(out, `templates/${sub}`, "png", "image/png");
+      const nameHint = `template-${sub}-${kind}-${Date.now()}.png`;
+      return uploadBufferToStorage(out, "uploads", "png", "image/png", nameHint);
     };
 
     const uploads = {
@@ -73,25 +73,26 @@ export async function POST(req) {
       data: {
         company_id,
         template_name,
-        image_logo: uploads.image_logo?.path || null,
-        background: uploads.background?.path || null,
-        header_client: uploads.header_client?.path || null,
-        footer_client: uploads.footer_client?.path || null,
-        header_partner: uploads.header_partner?.path || null,
-        footer_partner: uploads.footer_partner?.path || null,
+        // Simpan URL publik langsung agar FE bisa pakai apa adanya
+        image_logo: uploads.image_logo?.publicUrl || null,
+        background: uploads.background?.publicUrl || null,
+        header_client: uploads.header_client?.publicUrl || null,
+        footer_client: uploads.footer_client?.publicUrl || null,
+        header_partner: uploads.header_partner?.publicUrl || null,
+        footer_partner: uploads.footer_partner?.publicUrl || null,
       },
     });
 
     // Tambahkan public URL untuk kemudahan preview di mobile
-    const toPublic = (p) => (p ? supabase.storage.from("invoice").getPublicUrl(p).data.publicUrl : null);
+    // Nilai kolom sudah public URL; tetap kirim alias *_url untuk kompatibilitas
     const withUrls = {
       ...created,
-      image_logo_url: toPublic(created.image_logo),
-      background_url: toPublic(created.background),
-      header_client_url: toPublic(created.header_client),
-      footer_client_url: toPublic(created.footer_client),
-      header_partner_url: toPublic(created.header_partner),
-      footer_partner_url: toPublic(created.footer_partner),
+      image_logo_url: created.image_logo,
+      background_url: created.background,
+      header_client_url: created.header_client,
+      footer_client_url: created.footer_client,
+      header_partner_url: created.header_partner,
+      footer_partner_url: created.footer_partner,
     };
 
     return NextResponse.json(withUrls, { status: 201 });
@@ -108,15 +109,14 @@ export async function GET() {
       orderBy: { created_at: "desc" },
       include: { company: { select: { company_id: true, business_name: true, company_name: true } } },
     });
-    const toPublic = (p) => (p ? supabase.storage.from("invoice").getPublicUrl(p).data.publicUrl : null);
     const data = list.map((t) => ({
       ...t,
-      image_logo_url: toPublic(t.image_logo),
-      background_url: toPublic(t.background),
-      header_client_url: toPublic(t.header_client),
-      footer_client_url: toPublic(t.footer_client),
-      header_partner_url: toPublic(t.header_partner),
-      footer_partner_url: toPublic(t.footer_partner),
+      image_logo_url: t.image_logo,
+      background_url: t.background,
+      header_client_url: t.header_client,
+      footer_client_url: t.footer_client,
+      header_partner_url: t.header_partner,
+      footer_partner_url: t.footer_partner,
     }));
     return NextResponse.json(data, { status: 200 });
   } catch (error) {
@@ -124,3 +124,5 @@ export async function GET() {
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
   }
 }
+
+

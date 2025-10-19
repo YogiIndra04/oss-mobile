@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { uploadToSupabase } from "@/lib/utils/uploadSupabase";
+import { uploadToStorage } from "@/lib/utils/uploadStorage";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { NextResponse } from "next/server";
@@ -70,7 +70,7 @@ export async function POST(req) {
     // upload foto profil
     let profileImageUrl = null;
     if (file && file.name) {
-      const uploaded = await uploadToSupabase(file, "profile_image");
+      const uploaded = await uploadToStorage(file, "profile_image");
       profileImageUrl = uploaded.publicUrl;
     }
 
@@ -104,3 +104,5 @@ export async function POST(req) {
     );
   }
 }
+
+

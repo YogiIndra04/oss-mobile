@@ -17,7 +17,7 @@ export async function middleware(req) {
     "/api/auth/register",
     "/api/auth/me",
     "/api/users",
-    "/api/supabase",
+    "/api/storage",
   ];
 
   if (publicPaths.some((path) => pathname.startsWith(path))) {
@@ -55,6 +55,7 @@ export async function middleware(req) {
         "/api/payment_proofs",
         "/api/categories",
         "/api/barcodes",
+        "/api/tools", // admin utilities (e.g., storage migration)
       ],
       konsultan: [
         "/api/companies",
@@ -91,3 +92,4 @@ export async function middleware(req) {
 export const config = {
   matcher: ["/api/:path*"],
 };
+

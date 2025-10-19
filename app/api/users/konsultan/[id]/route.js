@@ -1,8 +1,8 @@
 import prisma from "@/lib/prisma";
 import {
-  deleteFromSupabase,
-  uploadToSupabase,
-} from "@/lib/utils/uploadSupabase";
+  deleteFromStorage,
+  uploadToStorage,
+} from "@/lib/utils/uploadStorage";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 
@@ -55,11 +55,11 @@ export async function PUT(req, { params }) {
     // upload foto baru
     let profileImageUrl = oldUser.profile_user?.profile_image;
     if (file && file.name) {
-      if (profileImageUrl?.includes("supabase.co")) {
+      if (profileImageUrl?.includes("storage")) {
         const path = profileImageUrl.split("/invoice/")[1];
-        await deleteFromSupabase(path);
+        await deleteFromStorage(path);
       }
-      const uploaded = await uploadToSupabase(file, "profile_image");
+      const uploaded = await uploadToStorage(file, "profile_image");
       profileImageUrl = uploaded.publicUrl;
     }
 
@@ -105,10 +105,10 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // hapus foto dari Supabase kalau ada
-    if (konsultan.profile_user?.profile_image?.includes("supabase.co")) {
+    // hapus foto lama jika endpoint DELETE tersedia
+    if (konsultan.profile_user?.profile_image?.includes("storage")) {
       const path = konsultan.profile_user.profile_image.split("/invoice/")[1];
-      await deleteFromSupabase(path);
+      await deleteFromStorage(path);
     }
 
     await prisma.users.delete({
@@ -124,3 +124,5 @@ export async function DELETE(req, { params }) {
     );
   }
 }
+
+

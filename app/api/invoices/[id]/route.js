@@ -75,8 +75,7 @@
 // }
 
 import prisma from "@/lib/prisma";
-import supabase from "@/lib/supabase";
-import { uploadToSupabase } from "@/lib/utils/uploadSupabase";
+import { uploadToStorage, uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 
@@ -120,7 +119,8 @@ export async function PUT(req, { params }) {
 
     // Kalau ada file PDF baru → upload ke Supabase
     if (file && file.name) {
-      const { path, publicUrl } = await uploadToSupabase(file, "invoices");
+      const nameHint = `invoice_pdf-${id}.${(file.name.split('.').pop() || 'pdf')}`;
+      const { path, publicUrl } = await uploadToStorage(file, "uploads", nameHint);
       pdfPath = path; // relative path in bucket
       pdfUrl = publicUrl; // public URL
     } else if (pdfPath) {
@@ -159,7 +159,7 @@ export async function PUT(req, { params }) {
       },
     });
 
-    // ✅ regenerate barcode kalau ada pdfUrl
+    // Regenerate barcode kalau ada pdfUrl
     if (pdfUrl) {
       const barcodeBuffer = await QRCode.toBuffer(pdfUrl, {
         type: "png",
@@ -167,16 +167,8 @@ export async function PUT(req, { params }) {
         errorCorrectionLevel: "H",
       });
 
-      const barcodeFileName = `barcodes/${id}.png`;
-      await supabase.storage
-        .from("invoice")
-        .upload(barcodeFileName, barcodeBuffer, {
-          contentType: "image/png",
-          upsert: true,
-        });
-
-      const { data: pub } = supabase.storage.from("invoice").getPublicUrl(barcodeFileName);
-      const barcodePublicUrl = pub?.publicUrl || null;
+      const nameHint = `barcode-${id}.png`
+      const up = await uploadBufferToStorage(barcodeBuffer, "uploads", "png", "image/png", nameHint);
 
       // FE embeds QR into PDF; backend stores as-is, only syncs links
       await prisma.barcodes.upsert({
@@ -239,10 +231,8 @@ export async function GET(_req, { params }) {
           if (b.barcode_image_path.startsWith('http')) {
             return { ...b, barcode_image_url: b.barcode_image_path };
           }
-          const pub = supabase.storage
-            .from('invoice')
-            .getPublicUrl(b.barcode_image_path);
-          return { ...b, barcode_image_url: pub?.data?.publicUrl || null };
+          // Legacy relative path (Supabase). Untuk OSS kita menyimpan URL publik langsung.
+          return { ...b, barcode_image_url: null };
         })
       : rest.barcodes;
 
@@ -277,19 +267,14 @@ export async function DELETE(_req, { params }) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
-    // Remove barcode image files from Supabase and delete rows
+    // Remove barcode image files (TODO: hapus fisik jika API DELETE tersedia) dan delete rows
     if (Array.isArray(existing.barcodes) && existing.barcodes.length) {
       const paths = existing.barcodes
         .map((b) => {
           if (!b?.barcode_image_path) return null;
-          return b.barcode_image_path.includes('/invoice/')
-            ? b.barcode_image_path.split('/invoice/')[1]
-            : b.barcode_image_path;
+          return b.barcode_image_path;
         })
         .filter(Boolean);
-      if (paths.length) {
-        await supabase.storage.from("invoice").remove(paths);
-      }
       await prisma.barcodes.deleteMany({ where: { invoice_id: id } });
     }
 
@@ -302,5 +287,9 @@ export async function DELETE(_req, { params }) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+
+
+
 
 

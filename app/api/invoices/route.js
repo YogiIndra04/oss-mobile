@@ -1,7 +1,6 @@
 import { verifyJwt } from "@/lib/jwt";
 import prisma from "@/lib/prisma";
-import supabase from "@/lib/supabase";
-import { uploadToSupabase } from "@/lib/utils/uploadSupabase";
+import { uploadToStorage, uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 
@@ -62,11 +61,12 @@ export async function POST(req) {
       );
     }
 
-    // Upload PDF to Supabase if provided
+    // Upload PDF to OSS Storage (single 'uploads' folder) if provided
     let pdfPath = null;
     let pdfUrl = null;
     if (file && file.name) {
-      const { path, publicUrl } = await uploadToSupabase(file, "invoices");
+      const nameHint = `invoice_pdf-${invoice_number || Date.now()}.${(file.name.split('.').pop()||'pdf')}`;
+      const { path, publicUrl } = await uploadToStorage(file, "uploads", nameHint);
       pdfPath = path;
       pdfUrl = publicUrl;
     }
@@ -109,22 +109,9 @@ export async function POST(req) {
         errorCorrectionLevel: "H",
       });
 
-      const barcodeFileName = `barcodes/${newInvoice.invoice_id}.png`;
-      const { error: uploadError } = await supabase.storage
-        .from("invoice")
-        .upload(barcodeFileName, barcodeBuffer, {
-          contentType: "image/png",
-          upsert: true,
-        });
-      if (uploadError) {
-        console.error("Supabase upload error:", uploadError);
-        throw uploadError;
-      }
-
-      const pub = supabase.storage
-        .from("invoice")
-        .getPublicUrl(barcodeFileName);
-      const barcodePublicUrl = pub?.data?.publicUrl || null;
+      const nameHint = `barcode-${newInvoice.invoice_id}.png`;
+      const up = await uploadBufferToStorage(barcodeBuffer, "uploads", "png", "image/png", nameHint);
+      const barcodePublicUrl = up?.publicUrl || null;
 
       newBarcode = await prisma.barcodes.create({
         data: {
@@ -152,10 +139,8 @@ export async function POST(req) {
       if (newBarcode.barcode_image_path.startsWith("http")) {
         barcodeImageUrl = newBarcode.barcode_image_path;
       } else {
-        const pub = supabase.storage
-          .from("invoice")
-          .getPublicUrl(newBarcode.barcode_image_path);
-        barcodeImageUrl = pub?.data?.publicUrl || null;
+        // Legacy relative path (old storage); untuk OSS kita menyimpan URL publik langsung
+        barcodeImageUrl = null;
       }
     }
 
@@ -210,10 +195,8 @@ export async function GET() {
             if (b.barcode_image_path && b.barcode_image_path.startsWith("http")) {
               return { ...b, barcode_image_url: b.barcode_image_path };
             } else {
-              const pub = supabase.storage
-                .from("invoice")
-                .getPublicUrl(b.barcode_image_path);
-              return { ...b, barcode_image_url: pub?.data?.publicUrl || null };
+              // Legacy relative path (old storage); untuk OSS kita menyimpan URL publik langsung
+              return { ...b, barcode_image_url: null };
             }
           })
         : rest.barcodes;
@@ -224,10 +207,8 @@ export async function GET() {
           if (rest.pdf_path.startsWith("http")) {
             pdf_public_url = rest.pdf_path;
           } else {
-            const pub = supabase.storage
-              .from("invoice")
-              .getPublicUrl(rest.pdf_path);
-            pdf_public_url = pub?.data?.publicUrl || null;
+            // Legacy relative path (old storage)
+            pdf_public_url = null;
           }
         } catch (_) {}
       }
@@ -250,3 +231,5 @@ export async function GET() {
     );
   }
 }
+
+

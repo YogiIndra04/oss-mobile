@@ -1,8 +1,7 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { uploadTemplateFile, deleteFromSupabase, uploadBufferToSupabase } from "@/lib/utils/uploadSupabase";
+import { uploadTemplateFileToStorage, deleteFromStorage, uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { verifyJwt } from "@/lib/jwt";
-import supabase from "@/lib/supabase";
 import sharp from "sharp";
 
 // Get by id
@@ -14,15 +13,14 @@ export async function GET(req, { params }) {
       include: { company: { select: { company_id: true, business_name: true, company_name: true } } },
     });
     if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const toPublic = (p) => (p ? supabase.storage.from("invoice").getPublicUrl(p).data.publicUrl : null);
     const withUrls = {
       ...data,
-      image_logo_url: toPublic(data.image_logo),
-      background_url: toPublic(data.background),
-      header_client_url: toPublic(data.header_client),
-      footer_client_url: toPublic(data.footer_client),
-      header_partner_url: toPublic(data.header_partner),
-      footer_partner_url: toPublic(data.footer_partner),
+      image_logo_url: data.image_logo,
+      background_url: data.background,
+      header_client_url: data.header_client,
+      footer_client_url: data.footer_client,
+      header_partner_url: data.header_partner,
+      footer_partner_url: data.footer_partner,
     };
     return NextResponse.json(withUrls, { status: 200 });
   } catch (error) {
@@ -85,24 +83,25 @@ export async function PUT(req, { params }) {
       if (f && f.name) {
         const buf = Buffer.from(await f.arrayBuffer());
         const out = await process(buf, field);
-        const up = await uploadBufferToSupabase(out, `templates/${sub}`, "png", "image/png");
+        const up = await uploadBufferToStorage(out, "uploads", "png", "image/png", `template-${sub}-${field}-${Date.now()}.png`);
         if (existing[field]) {
-          try { await deleteFromSupabase(existing[field]); } catch {}
+          // TODO(storage): hapus file lama jika API DELETE tersedia
+          try { await deleteFromStorage(existing[field]); } catch {}
         }
-        nextData[field] = up.path;
+        // Simpan URL publik langsung
+        nextData[field] = up.publicUrl;
       }
     }
 
     const updated = await prisma.invoice_template.update({ where: { template_id: id }, data: nextData });
-    const toPublic = (p) => (p ? supabase.storage.from("invoice").getPublicUrl(p).data.publicUrl : null);
     const withUrls = {
       ...updated,
-      image_logo_url: toPublic(updated.image_logo),
-      background_url: toPublic(updated.background),
-      header_client_url: toPublic(updated.header_client),
-      footer_client_url: toPublic(updated.footer_client),
-      header_partner_url: toPublic(updated.header_partner),
-      footer_partner_url: toPublic(updated.footer_partner),
+      image_logo_url: updated.image_logo,
+      background_url: updated.background,
+      header_client_url: updated.header_client,
+      footer_client_url: updated.footer_client,
+      header_partner_url: updated.header_partner,
+      footer_partner_url: updated.footer_partner,
     };
     return NextResponse.json(withUrls, { status: 200 });
   } catch (error) {
@@ -132,7 +131,7 @@ export async function DELETE(req, { params }) {
       existing.footer_partner,
     ].filter(Boolean);
     for (const p of paths) {
-      try { await deleteFromSupabase(p); } catch {}
+      try { await deleteFromStorage(p); } catch {}
     }
 
     await prisma.invoice_template.delete({ where: { template_id: id } });
@@ -142,3 +141,5 @@ export async function DELETE(req, { params }) {
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
   }
 }
+
+

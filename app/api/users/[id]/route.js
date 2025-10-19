@@ -1,8 +1,8 @@
 import prisma from "@/lib/prisma";
 import {
-  deleteFromSupabase,
-  uploadToSupabase,
-} from "@/lib/utils/uploadSupabase";
+  deleteFromStorage,
+  uploadToStorage,
+} from "@/lib/utils/uploadStorage";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 
@@ -60,13 +60,13 @@ export async function PUT(req, { params }) {
 
     // kalau ada file baru → hapus lama & upload baru
     if (file && file.name) {
-      if (fileUrl?.includes("supabase.co")) {
+      if (fileUrl) {
         const oldPath = fileUrl.split("/invoice/")[1];
         if (oldPath) {
-          await deleteFromSupabase(oldPath);
+          await deleteFromStorage(oldPath);
         }
       }
-      const uploaded = await uploadToSupabase(file, "profile_image");
+      const uploaded = await uploadToStorage(file, "profile_image");
       fileUrl = uploaded.publicUrl;
     }
 
@@ -114,3 +114,4 @@ export async function DELETE(req, { params }) {
     );
   }
 }
+
