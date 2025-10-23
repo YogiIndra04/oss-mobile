@@ -78,6 +78,7 @@ import prisma from "@/lib/prisma";
 import { uploadToStorage, uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
+import { computeInvoice } from "@/lib/discount";
 
 // UPDATE Invoice pakai form-data
 export async function PUT(req, { params }) {
@@ -175,19 +176,50 @@ export async function PUT(req, { params }) {
         where: { invoice_id: id },
         update: {
           barcode_link: (updatedInvoice?.pdf_path || pdfUrl),
-          barcode_image_path: barcodePublicUrl || barcodeFileName,
+          barcode_image_path: up?.publicUrl || up?.path || null,
           updated_at: new Date(),
         },
         create: {
           invoice_id: id,
           document_type: "Invoice",
           barcode_link: (updatedInvoice?.pdf_path || pdfUrl),
-          barcode_image_path: barcodePublicUrl || barcodeFileName,
+          barcode_image_path: up?.publicUrl || up?.path || null,
         },
       });
     }
 
-    return NextResponse.json(updatedInvoice, { status: 200 });
+    // Hitung subtotal & diskon invoice setelah update
+    const items = await prisma.productdetail.findMany({
+      where: { invoice_id: id },
+      select: { total_product_amount: true },
+    });
+    const lineTotalsAfter = items.map((i) => i.total_product_amount);
+    const invoice_discount_type = formData.get("invoice_discount_type") || null;
+    const invDiscRaw = formData.get("invoice_discount_value");
+    const invoice_discount_value =
+      invDiscRaw != null && String(invDiscRaw).length > 0 ? Number(invDiscRaw) : null;
+
+    const totals = computeInvoice({
+      lineTotalsAfter,
+      invoiceDiscountType: invoice_discount_type,
+      invoiceDiscountValue: invoice_discount_value,
+      taxRate: null,
+    });
+
+    const finalInvoice = await prisma.invoices.update({
+      where: { invoice_id: id },
+      data: {
+        subtotal_before_invoice_discount: totals.subtotal_before_invoice_discount,
+        invoice_discount_type,
+        invoice_discount_value,
+        invoice_discount_amount: totals.invoice_discount_amount,
+        subtotal_after_invoice_discount: totals.subtotal_after_invoice_discount,
+        total_amount: totals.total_amount,
+      },
+      include: { barcodes: true },
+    });
+
+    return NextResponse.json(finalInvoice, { status: 200 });
   } catch (error) {
     console.error("PUT /invoices/[id] error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

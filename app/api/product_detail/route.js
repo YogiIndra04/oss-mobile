@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { computeLine } from "@/lib/discount";
 
 // CREATE ProductDetail
 export async function POST(req) {
@@ -22,12 +23,26 @@ export async function POST(req) {
         { status: 404 }
       );
     }
+    // Hitung total line berdasarkan harga produk dan diskon (opsional)
+    const qty = Number(body.quantity);
+    const unitPrice = Number(productExists.product_amount);
+    const c = computeLine({
+      quantity: qty,
+      unitPrice,
+      discountType: body.discount_type || null,
+      discountValue: body.discount_value != null ? Number(body.discount_value) : null,
+    });
+
     const productDetail = await prisma.productdetail.create({
       data: {
         invoice_id: body.invoice_id,
         product_id: body.product_id,
-        quantity: body.quantity,
-        total_product_amount: body.total_product_amount,
+        quantity: qty,
+        total_product_amount: c.line_total_after_discount, // after discount
+        discount_type: body.discount_type || null,
+        discount_value: body.discount_value != null ? Number(body.discount_value) : null,
+        line_total_before_discount: c.line_total_before_discount,
+        line_discount_amount: c.line_discount_amount,
       },
     });
     return new Response(JSON.stringify(productDetail), { status: 201 });
