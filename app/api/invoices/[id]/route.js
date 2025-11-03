@@ -75,11 +75,13 @@
 // }
 
 import { computeInvoice } from "@/lib/discount";
+import { verifyJwt } from "@/lib/jwt";
 import prisma from "@/lib/prisma";
 import {
   uploadBufferToStorage,
   uploadToStorage,
 } from "@/lib/utils/uploadStorage";
+import { sendGroupFile, sendGroupMessage } from "@/lib/utils/whatsappGroup";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 
@@ -332,6 +334,44 @@ export async function PUT(req, { params }) {
       include: { barcodes: true },
     });
 
+    // WhatsApp group notification for update (best-effort)
+    try {
+      let handlerName = "Unknown";
+      try {
+        const token = req.headers.get("authorization")?.split(" ")[1];
+        const decoded = token ? verifyJwt(token) : null;
+        if (decoded?.id_user) {
+          const u = await prisma.users.findUnique({
+            where: { id_user: decoded.id_user },
+            select: {
+              username: true,
+              profile_user: { select: { user_name: true } },
+            },
+          });
+          handlerName =
+            u?.profile_user?.user_name ||
+            u?.username ||
+            String(decoded.id_user);
+        }
+      } catch {}
+
+      const msg = [
+        "Invoice telah diupdate!",
+        `Nomor Invoice : ${finalInvoice.invoice_number}`,
+        `Nama Customer : ${finalInvoice.customer_name}`,
+        `Di handle oleh : ${handlerName}`,
+      ].join("\n");
+
+      const fileUrl = pdfUrl || finalInvoice.pdf_path || null;
+      if (fileUrl) {
+        await sendGroupFile(fileUrl, msg);
+      } else {
+        await sendGroupMessage(msg);
+      }
+    } catch (e) {
+      console.error("WA notify (update invoice) failed:", e);
+    }
+
     return NextResponse.json(finalInvoice, { status: 200 });
   } catch (error) {
     console.error("PUT /invoices/[id] error:", error);
@@ -400,7 +440,7 @@ export async function GET(_req, { params }) {
 }
 
 // DELETE Invoice by ID (cleans up barcode files/rows)
-export async function DELETE(_req, { params }) {
+export async function DELETE(req, { params }) {
   try {
     const { id } = await params;
     if (!id) {
@@ -428,6 +468,37 @@ export async function DELETE(_req, { params }) {
 
     // Delete the invoice (other relations may cascade per schema)
     await prisma.invoices.delete({ where: { invoice_id: id } });
+
+    // WhatsApp group notification for delete (message only)
+    try {
+      let handlerName = "Unknown";
+      try {
+        const token = req.headers.get("authorization")?.split(" ")[1];
+        const decoded = token ? verifyJwt(token) : null;
+        if (decoded?.id_user) {
+          const u = await prisma.users.findUnique({
+            where: { id_user: decoded.id_user },
+            select: {
+              username: true,
+              profile_user: { select: { user_name: true } },
+            },
+          });
+          handlerName =
+            u?.profile_user?.user_name ||
+            u?.username ||
+            String(decoded.id_user);
+        }
+      } catch {}
+
+      const msg = [
+        `Nomor Invoice : ${existing.invoice_number}`,
+        `Nama Customer : ${existing.customer_name}`,
+        `Dihapus oleh : ${handlerName}`,
+      ].join("\n");
+      await sendGroupMessage(msg);
+    } catch (e) {
+      console.error("WA notify (delete invoice) failed:", e);
+    }
 
     return NextResponse.json({ message: "Invoice deleted" }, { status: 200 });
   } catch (error) {

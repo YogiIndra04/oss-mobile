@@ -7,6 +7,7 @@ import {
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
+import { sendGroupFile, sendGroupMessage } from "@/lib/utils/whatsappGroup";
 
 // CREATE Invoice (multipart/form-data)
 export async function POST(req) {
@@ -223,6 +224,33 @@ export async function POST(req) {
         // Legacy relative path (old storage); untuk OSS kita menyimpan URL publik langsung
         barcodeImageUrl = null;
       }
+    }
+
+    // Send WhatsApp group notification (non-blocking, but awaited with safety)
+    try {
+      // Resolve handler name
+      let handlerName = String(decoded.id_user);
+      try {
+        const u = await prisma.users.findUnique({
+          where: { id_user: decoded.id_user },
+          select: { username: true, profile_user: { select: { user_name: true } } },
+        });
+        handlerName = u?.profile_user?.user_name || u?.username || handlerName;
+      } catch {}
+
+      const msg = [
+        `Nomor Invoice : ${invoice_number}`,
+        `Nama Customer : ${customer_name}`,
+        `Di handle oleh : ${handlerName}`,
+      ].join("\n");
+
+      if (pdfUrl) {
+        await sendGroupFile(pdfUrl, msg);
+      } else {
+        await sendGroupMessage(msg);
+      }
+    } catch (e) {
+      console.error("WA notify (create invoice) failed:", e);
     }
 
     return NextResponse.json(

@@ -19,6 +19,7 @@ export async function middleware(req) {
     "/api/users",
     "/api/storage",
     "/api/files/invoice/",
+    "/api/debug/watzap",
   ];
 
   if (publicPaths.some((path) => pathname.startsWith(path))) {
@@ -58,6 +59,7 @@ export async function middleware(req) {
         "/api/barcodes",
         "/api/tools", // admin utilities (e.g., storage migration)
         "/api/currency_rates", // admin-only currency endpoints
+        "/api/debug/watzap",
       ],
       konsultan: [
         "/api/companies",
@@ -69,6 +71,7 @@ export async function middleware(req) {
         "/api/customer",
         "/api/barcodes",
         "/api/payment_proofs",
+        "/api/debug/watzap",
       ],
     };
 
