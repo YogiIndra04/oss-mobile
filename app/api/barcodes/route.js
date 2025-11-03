@@ -2,37 +2,18 @@ import prisma from "@/lib/prisma";
 import { uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
+import sharp from "sharp";
 
 // CREATE barcode image in storage and record in DB
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { invoice_id, document_type, barcode_link } = body;
+    const { invoice_id, barcode_link } = body;
 
-    if (!document_type) {
-      return NextResponse.json(
-        { error: "document_type is required" },
-        { status: 400 }
-      );
-    }
-
-    // 1) Generate QR code PNG buffer from the link
-    const qrBuffer = await QRCode.toBuffer(barcode_link, {
-      type: "png",
-      width: 300,
-      errorCorrectionLevel: "H",
-    });
-
-    // 2) Upload ke Storage OSS (semua dalam folder 'uploads') dengan nama yang jelas
-    const nameHint = `barcode-${invoice_id || "no-invoice"}.png`;
-    const up = await uploadBufferToStorage(qrBuffer, "uploads", "png", "image/png", nameHint);
-    const publicUrl = up?.publicUrl || null;
-
-    // 4) Determine linkForQr: if invoice_id present, force to invoice.pdf_path; else use provided barcode_link
+    // 1) Resolve the final link that must be encoded into the QR
     let linkForQr = barcode_link || null;
-    let inv = null;
     if (invoice_id) {
-      inv = await prisma.invoices.findUnique({
+      const inv = await prisma.invoices.findUnique({
         where: { invoice_id },
         select: { pdf_path: true },
       });
@@ -42,7 +23,9 @@ export async function POST(req) {
           { status: 400 }
         );
       }
-      linkForQr = inv.pdf_path;
+      // Build stable proxy URL so QR always points to one canonical path
+      const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
+      linkForQr = `${origin}/api/files/invoice/${invoice_id}`;
     }
     if (!linkForQr) {
       return NextResponse.json(
@@ -51,11 +34,33 @@ export async function POST(req) {
       );
     }
 
-    // 5) Create DB record
+    // 2) Generate QR code PNG buffer from the resolved link
+    const qrBuffer = await QRCode.toBuffer(linkForQr, {
+      type: "png",
+      width: 300,
+      errorCorrectionLevel: "H",
+    });
+
+    // Optimize PNG to make file smaller
+    const optimized = await sharp(qrBuffer)
+      .png({ compressionLevel: 9, palette: true, effort: 10 })
+      .toBuffer();
+
+    // 3) Upload to Storage OSS (single 'uploads' folder) with a clear name
+    const nameHint = `barcode-${invoice_id || "no-invoice"}.png`;
+    const up = await uploadBufferToStorage(
+      optimized,
+      "uploads",
+      "png",
+      "image/png",
+      nameHint
+    );
+    const publicUrl = up?.publicUrl || null;
+
+    // 4) Create DB record with the same link that was encoded in QR
     const barcode = await prisma.barcodes.create({
       data: {
         invoice_id,
-        document_type,
         barcode_link: linkForQr,
         barcode_image_path: publicUrl,
       },
@@ -88,4 +93,3 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

@@ -1,7 +1,8 @@
 import prisma from "@/lib/prisma";
+import { uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
-import { uploadBufferToStorage } from "@/lib/utils/uploadStorage";
+import sharp from "sharp";
 
 // GET barcode by ID (ensure image path is public URL)
 export async function GET(_req, { params }) {
@@ -10,11 +11,15 @@ export async function GET(_req, { params }) {
       where: { barcode_id: params.id },
       include: { invoice: true },
     });
-    if (!barcode) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!barcode)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     // barcode_image_path di DB diharapkan sudah berupa public URL
     const publicUrl = barcode.barcode_image_path || null;
-    return NextResponse.json({ ...barcode, barcode_image_path: publicUrl }, { status: 200 });
+    return NextResponse.json(
+      { ...barcode, barcode_image_path: publicUrl },
+      { status: 200 }
+    );
   } catch (error) {
     console.error("GET /barcodes/:id error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -43,7 +48,8 @@ export async function PUT(req, { params }) {
           { status: 400 }
         );
       }
-      linkForQr = inv.pdf_path;
+      const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
+      linkForQr = `${origin}/api/files/invoice/${current.invoice_id}`;
     }
     if (!linkForQr) {
       return NextResponse.json(
@@ -58,14 +64,22 @@ export async function PUT(req, { params }) {
       width: 300,
       errorCorrectionLevel: "H",
     });
+    const optimized = await sharp(qrBuffer)
+      .png({ compressionLevel: 9, palette: true, effort: 10 })
+      .toBuffer();
     const nameHint = `barcode-${params.id}.png`;
-    const up = await uploadBufferToStorage(qrBuffer, "uploads", "png", "image/png", nameHint);
+    const up = await uploadBufferToStorage(
+      optimized,
+      "uploads",
+      "png",
+      "image/png",
+      nameHint
+    );
     const barcodePublicUrl = up?.publicUrl || null;
 
     const updated = await prisma.barcodes.update({
       where: { barcode_id: params.id },
       data: {
-        document_type: body.document_type,
         barcode_link: linkForQr,
         barcode_image_path: barcodePublicUrl,
         updated_at: new Date(),
@@ -85,9 +99,10 @@ export async function DELETE(_req, { params }) {
     const barcode = await prisma.barcodes.findUnique({
       where: { barcode_id: params.id },
     });
-    if (!barcode) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!barcode)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // TODO(storage): hapus file fisik jika endpoint DELETE tersedia di OSS Storage
+    // (storage): hapus file fisik jika endpoint DELETE tersedia di OSS Storage (sejauh ini belum ada)
 
     await prisma.barcodes.delete({ where: { barcode_id: params.id } });
     return NextResponse.json({ message: "Barcode deleted" }, { status: 200 });

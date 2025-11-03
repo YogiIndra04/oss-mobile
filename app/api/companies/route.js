@@ -5,7 +5,7 @@ import { NextResponse } from "next/server"
 // ✅ Get all companies
 export async function GET() {
   try {
-    const companies = await prisma.companies.findMany()
+    const companies = await prisma.companies.findMany({ orderBy: { created_at: "desc" } })
     return NextResponse.json(companies)
   } catch (error) {
     console.error(error)

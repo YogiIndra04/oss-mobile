@@ -7,6 +7,7 @@ export async function GET() {
   try {
     const users = await prisma.users.findMany({
       include: { profile_user: true },
+      orderBy: { created_at: "desc" },
     });
     return Response.json(users);
   } catch (error) {

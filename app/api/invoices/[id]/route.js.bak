@@ -232,10 +232,7 @@ export async function PUT(req, { params }) {
             ? customer_name.trim()
             : oldInvoice.customer_name,
         customer_address,
-        // unpaid dihitung otomatis dari payment proofs; jangan override jika tidak dikirim
-        ...(unpaid != null && String(unpaid).length > 0
-          ? { unpaid: Number(unpaid) }
-          : {}),
+        unpaid: unpaid ? Number(unpaid) : null,
         total_amount:
           total_amount !== null &&
           total_amount !== undefined &&
@@ -435,3 +432,4 @@ export async function DELETE(_req, { params }) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+

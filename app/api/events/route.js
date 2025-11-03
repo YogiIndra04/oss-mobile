@@ -41,7 +41,7 @@ export async function POST(req) {
 // GET All Events
 export async function GET() {
   try {
-    const events = await prisma.events.findMany();
+    const events = await prisma.events.findMany({ orderBy: { created_at: "desc" } });
     return NextResponse.json(events, { status: 200 });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

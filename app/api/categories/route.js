@@ -4,13 +4,24 @@ import { NextResponse } from "next/server";
 //
 // ✅ [GET] Ambil semua kategori + produk di dalamnya
 //
-export async function GET() {
+export async function GET(req) {
   try {
+    const { searchParams } = new URL(req.url);
+    let page = parseInt(searchParams.get("page") || "1", 10);
+    let limit = parseInt(searchParams.get("limit") || "10", 10);
+    if (!Number.isFinite(page) || page < 1) page = 1;
+    if (!Number.isFinite(limit) || limit < 1) limit = 10;
+    if (limit > 100) limit = 100;
+    const skip = (page - 1) * limit;
+
+    const total = await prisma.categories.count();
     const categories = await prisma.categories.findMany({
       include: {
         products: true, // ambil produk di setiap kategori
       },
       orderBy: { created_at: "desc" },
+      skip,
+      take: limit,
     });
 
     const formatted = categories.map((cat) => ({
@@ -32,7 +43,17 @@ export async function GET() {
       })),
     }));
 
-    return NextResponse.json(formatted, { status: 200 });
+    return NextResponse.json({
+      data: formatted,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
+      },
+    }, { status: 200 });
   } catch (error) {
     console.error("GET /api/categories error:", error);
     return NextResponse.json(

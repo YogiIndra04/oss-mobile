@@ -185,10 +185,11 @@ model events {
 model invoices {
   invoice_id                  String   @id @default(uuid()) @db.Char(36)
   invoice_number              String   @unique @db.VarChar(20)
+  document_type              DocumentType @default(Invoice)
   invoice_type                InvoiceType
   customer_name               String   @db.VarChar(255)
   customer_address            String?  @db.VarChar(255)
-  unpaid                      Decimal? @db.Decimal(10, 2)
+  unpaid                      Decimal  @default(0) @db.Decimal(10, 2)
   total_amount                Decimal  @db.Decimal(10, 2)
   // subtotal sebelum diskon invoice (setelah diskon per-item)
   subtotal_before_invoice_discount Decimal @default(0) @db.Decimal(10, 2)
@@ -204,8 +205,8 @@ model invoices {
   completion_date             DateTime? @db.DateTime
   due_date                    DateTime? @db.DateTime
   currency_accepted           String   @db.VarChar(10)
-  currency_exchange_rate      Decimal? @db.Decimal(10, 4)
-  currency_exchange_rate_date DateTime? @db.DateTime
+  currency_exchange_rate      Decimal? @db.Decimal(18, 6)
+  currency_exchange_rate_date DateTime? @db.Date
   pdf_path                    String?  @db.LongText
   // menandai pengguna pembuat invoice; optional untuk kompatibilitas data lama
   created_by_user_id          String?  @db.Char(36)
@@ -220,10 +221,14 @@ model invoices {
 
   barcodes barcodes[]
 
+  // back-relation: audit perubahan kurs
+  rateAudits invoice_rate_audit[]
+
   // relasi ke users untuk creator
   createdBy users? @relation("InvoiceCreatedBy", fields: [created_by_user_id], references: [id_user], map: "fk_invoices_created_by")
 
   @@index([created_by_user_id], map: "invoices_created_by_idx")
+  @@index([created_by_user_id, created_at], map: "invoices_creator_created_at_idx")
 }
 
 model productdetail {
@@ -231,6 +236,11 @@ model productdetail {
   invoice_id           String   @db.Char(36)
   product_id           String   @db.Char(36)
   quantity             Int
+  // currency per-line + nilai foreign & IDR
+  currency_code        String?  @db.VarChar(10)
+  unit_price_foreign   Decimal? @db.Decimal(18, 6)
+  line_total_foreign   Decimal? @db.Decimal(18, 6)
+  line_total_idr       Decimal? @db.Decimal(18, 2)
   // total setelah diskon per-item (dipertahankan kompatibel)
   total_product_amount Decimal  @db.Decimal(10, 2)
   // informasi diskon per-item (opsional)
@@ -239,6 +249,9 @@ model productdetail {
   // nilai sebelum diskon & potongan pada level item
   line_total_before_discount Decimal  @default(0) @db.Decimal(10, 2)
   line_discount_amount       Decimal  @default(0) @db.Decimal(10, 2)
+  // nilai foreign untuk kompatibilitas baru
+  line_total_before_discount_foreign Decimal? @db.Decimal(18, 6)
+  line_discount_amount_foreign       Decimal? @db.Decimal(18, 6)
   created_at           DateTime @default(now()) @db.Timestamp(0)
   updated_at           DateTime @updatedAt @db.Timestamp(0)
 
@@ -260,7 +273,7 @@ model eventdetail {
   updated_at        DateTime @updatedAt @db.Timestamp(0)
 
   // ✅ Relasi
-  invoice invoices @relation(fields: [invoice_id], references: [invoice_id])
+  invoice invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
   event   events   @relation(fields: [event_id], references: [event_id])
 
   @@unique([invoice_id, event_id])
@@ -276,29 +289,64 @@ model paymentproofs {
   proof_description    String?  @db.Text
   proof_amount         Decimal  @db.Decimal(10, 2)
   uploaded_by_user_id  String   @db.Char(36)
+  // Penomoran cicilan per-invoice (nullable untuk kompatibilitas data lama)
+  proof_sequence       Int?
+  proof_date           DateTime? @db.DateTime
   created_at           DateTime @default(now()) @db.Timestamp(0)
   updated_at           DateTime @updatedAt @db.Timestamp(0)
 
   // ✅ Relasi
-  invoice    invoices @relation(fields: [invoice_id], references: [invoice_id])
+  invoice    invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
   uploadedBy users    @relation(fields: [uploaded_by_user_id], references: [id_user])
 
   @@map("payment_proofs")
+  @@index([invoice_id, proof_sequence])
 }
 
 model barcodes {
   barcode_id        String   @id @default(uuid()) @db.Char(36)
   invoice_id        String   @unique @db.Char(36)
-  document_type     DocumentType
   barcode_link      String   @db.Text
   barcode_image_path String  @db.Text
   created_at        DateTime @default(now()) @db.Timestamp(0)
   updated_at        DateTime @updatedAt @db.Timestamp(0)
 
   // ✅ Relasi
-  invoice invoices @relation(fields: [invoice_id], references: [invoice_id])
+  invoice invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
 
   @@map("barcodes")
+}
+
+// Kurs manual per mata uang per tanggal (snapshot historis)
+model currency_rates {
+  rate_id        String   @id @default(uuid()) @db.Char(36)
+  currency_code  String   @db.VarChar(10)
+  rate_to_base   Decimal  @db.Decimal(18, 6)
+  effective_date DateTime @db.Date
+  source         String?  @db.VarChar(100)
+  notes          String?  @db.Text
+  created_at     DateTime @default(now()) @db.DateTime
+  updated_at     DateTime @updatedAt @db.DateTime
+
+  @@unique([currency_code, effective_date])
+  @@index([currency_code, effective_date])
+}
+
+// Audit perubahan kurs pada invoice (reprice)
+model invoice_rate_audit {
+  id         String   @id @default(uuid()) @db.Char(36)
+  invoice_id String   @db.Char(36)
+  old_rate   Decimal? @db.Decimal(18, 6)
+  new_rate   Decimal  @db.Decimal(18, 6)
+  old_date   DateTime? @db.Date
+  new_date   DateTime  @db.Date
+  changed_by String    @db.Char(36)
+  notes      String?   @db.Text
+  changed_at DateTime  @default(now()) @db.DateTime
+
+  invoice invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
+
+  @@index([invoice_id])
 }
 
 enum DocumentType {

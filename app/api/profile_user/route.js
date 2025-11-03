@@ -92,6 +92,7 @@ export async function GET() {
   try {
     const profiles = await prisma.profile_user.findMany({
       include: { user: true },
+      orderBy: { created_at: "desc" },
     });
     return NextResponse.json(profiles, { status: 200 });
   } catch (err) {

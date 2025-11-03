@@ -1,7 +1,7 @@
-import prisma from "@/lib/prisma";
-import { NextResponse } from "next/server";
-import { uploadTemplateFileToStorage, deleteFromStorage, uploadBufferToStorage } from "@/lib/utils/uploadStorage";
 import { verifyJwt } from "@/lib/jwt";
+import prisma from "@/lib/prisma";
+import { uploadBufferToStorage } from "@/lib/utils/uploadStorage";
+import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 // Create invoice template (form-data)
@@ -41,23 +41,48 @@ export async function POST(req) {
       let pipeline = sharp(buf);
       switch (kind) {
         case "logo":
-          pipeline = pipeline.resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true });
+          pipeline = pipeline.resize({
+            width: 512,
+            height: 512,
+            fit: "inside",
+            withoutEnlargement: true,
+          });
           break;
         case "header_client":
         case "footer_client":
         case "header_partner":
         case "footer_partner":
-          pipeline = pipeline.resize({ width: 2000, height: 400, fit: "cover" });
+          pipeline = pipeline.resize({
+            width: 2000,
+            height: 400,
+            fit: "cover",
+          });
           break;
         case "background":
-          pipeline = pipeline.resize({ width: 1200, height: 1700, fit: "cover" });
+          pipeline = pipeline.resize({
+            width: 1200,
+            height: 1700,
+            fit: "cover",
+          });
           break;
         default:
-          pipeline = pipeline.resize({ width: 1600, fit: "inside", withoutEnlargement: true });
+          pipeline = pipeline.resize({
+            width: 1600,
+            fit: "inside",
+            withoutEnlargement: true,
+          });
       }
-      const out = await pipeline.png({ compressionLevel: 9, palette: true, effort: 10 }).toBuffer();
+      const out = await pipeline
+        .png({ compressionLevel: 9, palette: true, effort: 10 })
+        .toBuffer();
       const nameHint = `template-${sub}-${kind}-${Date.now()}.png`;
-      return uploadBufferToStorage(out, "uploads", "png", "image/png", nameHint);
+      return uploadBufferToStorage(
+        out,
+        "uploads",
+        "png",
+        "image/png",
+        nameHint
+      );
     };
 
     const uploads = {
@@ -98,7 +123,10 @@ export async function POST(req) {
     return NextResponse.json(withUrls, { status: 201 });
   } catch (error) {
     console.error("POST /invoice_template error:", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
 
@@ -107,7 +135,11 @@ export async function GET() {
   try {
     const list = await prisma.invoice_template.findMany({
       orderBy: { created_at: "desc" },
-      include: { company: { select: { company_id: true, business_name: true, company_name: true } } },
+      include: {
+        company: {
+          select: { company_id: true, business_name: true, company_name: true },
+        },
+      },
     });
     const data = list.map((t) => ({
       ...t,
@@ -121,8 +153,9 @@ export async function GET() {
     return NextResponse.json(data, { status: 200 });
   } catch (error) {
     console.error("GET /invoice_template error:", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
-
-

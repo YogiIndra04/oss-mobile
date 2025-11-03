@@ -33,6 +33,7 @@ export async function GET() {
   try {
     const tacs = await prisma.tac.findMany({
       include: { company: true }, // tampilkan detail company
+      orderBy: { created_at: "desc" },
     });
     return NextResponse.json(tacs, { status: 200 });
   } catch (err) {

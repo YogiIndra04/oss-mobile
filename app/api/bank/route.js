@@ -26,7 +26,7 @@ export async function POST(req) {
 // ✅ READ All Banks
 export async function GET() {
   try {
-    const banks = await prisma.bank.findMany();
+    const banks = await prisma.bank.findMany({ orderBy: { created_at: "desc" } });
     return NextResponse.json(banks, { status: 200 });
   } catch (err) {
     console.error("❌ Error fetching banks:", err);
