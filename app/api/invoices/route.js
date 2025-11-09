@@ -4,10 +4,10 @@ import {
   uploadBufferToStorage,
   uploadToStorage,
 } from "@/lib/utils/uploadStorage";
+import { sendGroupFile } from "@/lib/utils/whatsappGroup";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
-import { sendGroupFile, sendGroupMessage } from "@/lib/utils/whatsappGroup";
 
 // CREATE Invoice (multipart/form-data)
 export async function POST(req) {
@@ -39,6 +39,14 @@ export async function POST(req) {
       "currency_exchange_rate_date"
     );
     const file = formData.get("pdf_path");
+    const notifyWa = formData.get("notify_wa");
+    const pdfUrlFromField =
+      typeof file === "string" && file.trim().startsWith("http")
+        ? file.trim()
+        : typeof formData.get("pdf_url") === "string" &&
+          formData.get("pdf_url").trim().startsWith("http")
+        ? formData.get("pdf_url").trim()
+        : null;
 
     if (
       !invoice_number ||
@@ -124,7 +132,10 @@ export async function POST(req) {
     // Upload PDF to OSS Storage (single 'uploads' folder) if provided
     let pdfPath = null;
     let pdfUrl = null;
-    if (file && file.name) {
+    if (pdfUrlFromField) {
+      pdfPath = pdfUrlFromField;
+      pdfUrl = pdfUrlFromField;
+    } else if (file && file.name) {
       const safeNumber = String(invoice_number)
         .trim()
         .replace(/[^a-z0-9_-]+/gi, "-");
@@ -175,8 +186,7 @@ export async function POST(req) {
     // Generate and store barcode image
     let newBarcode = null;
     if (pdfUrl) {
-      const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
-      const proxyLink = `${origin}/api/files/invoice/${newInvoice.invoice_id}`;
+      // Generate QR using the direct public PDF URL (scan goes to actual PDF)
       const barcodeBuffer = await QRCode.toBuffer(pdfUrl, {
         type: "png",
         width: 300,
@@ -196,7 +206,8 @@ export async function POST(req) {
       newBarcode = await prisma.barcodes.create({
         data: {
           invoice_id: newInvoice.invoice_id,
-          barcode_link: proxyLink,
+          // Point QR link directly to the public PDF URL
+          barcode_link: pdfUrl,
           barcode_image_path: barcodePublicUrl || barcodeFileName,
         },
       });
@@ -226,28 +237,30 @@ export async function POST(req) {
       }
     }
 
-    // Send WhatsApp group notification (non-blocking, but awaited with safety)
+    // Send WhatsApp only when FE marks final (notify_wa === "1"). Use direct CDN pdf_path (no proxy).
     try {
-      // Resolve handler name
-      let handlerName = String(decoded.id_user);
-      try {
-        const u = await prisma.users.findUnique({
-          where: { id_user: decoded.id_user },
-          select: { username: true, profile_user: { select: { user_name: true } } },
-        });
-        handlerName = u?.profile_user?.user_name || u?.username || handlerName;
-      } catch {}
+      if (String(notifyWa || "") === "1" && pdfUrl) {
+        // Resolve handler name
+        let handlerName = String(decoded.id_user);
+        try {
+          const u = await prisma.users.findUnique({
+            where: { id_user: decoded.id_user },
+            select: {
+              username: true,
+              profile_user: { select: { user_name: true } },
+            },
+          });
+          handlerName =
+            u?.profile_user?.user_name || u?.username || handlerName;
+        } catch {}
 
-      const msg = [
-        `Nomor Invoice : ${invoice_number}`,
-        `Nama Customer : ${customer_name}`,
-        `Di handle oleh : ${handlerName}`,
-      ].join("\n");
+        const msg = [
+          `Nomor Invoice : ${invoice_number}`,
+          `Nama Customer : ${customer_name}`,
+          `PIC : ${handlerName}`,
+        ].join("\n");
 
-      if (pdfUrl) {
         await sendGroupFile(pdfUrl, msg);
-      } else {
-        await sendGroupMessage(msg);
       }
     } catch (e) {
       console.error("WA notify (create invoice) failed:", e);
@@ -291,6 +304,9 @@ export async function GET(req) {
       searchParams.get("created_by") || searchParams.get("created_by_user_id");
     const q = (searchParams.get("q") || "").trim();
     const statusRaw = (searchParams.get("status") || "").trim();
+    const searchMode = (searchParams.get("search_mode") || "")
+      .trim()
+      .toLowerCase();
     const statusMap = {
       paid: "Lunas",
       unpaid: "Belum_dibayar",
@@ -308,7 +324,11 @@ export async function GET(req) {
     try {
       const token = req.headers.get("authorization")?.split(" ")[1];
       const decoded = token ? verifyJwt(token) : null;
-      if (!creatorId && decoded?.role_user === "konsultan" && decoded?.id_user) {
+      if (
+        !creatorId &&
+        decoded?.role_user === "konsultan" &&
+        decoded?.id_user
+      ) {
         creatorId = decoded.id_user;
       }
     } catch {}
@@ -319,16 +339,168 @@ export async function GET(req) {
       ...(q
         ? {
             OR: [
-              { invoice_number: { contains: q, mode: "insensitive" } },
-              { customer_name: { contains: q, mode: "insensitive" } },
+              { invoice_number: { contains: q } },
+              { customer_name: { contains: q } },
             ],
           }
         : {}),
     };
+
+    // Mode pencarian "top" (quick search): kembalikan top-N hasil berperingkat dari MySQL
+    if (q && searchMode === "top") {
+      try {
+        const cap = 50;
+        let topLimit = parseInt(searchParams.get("limit") || "20", 10);
+        if (!Number.isFinite(topLimit) || topLimit < 1) topLimit = 20;
+        if (topLimit > cap) topLimit = cap;
+
+        // Build dynamic SQL dengan parameter binding aman
+        const conditions = [Prisma.sql`1=1`];
+        if (creatorId)
+          conditions.push(Prisma.sql`created_by_user_id = ${creatorId}`);
+        if (mappedStatus)
+          conditions.push(Prisma.sql`payment_status = ${mappedStatus}`);
+        // Batasi hanya baris yang setidaknya mengandung q pada salah satu kolom
+        conditions.push(
+          Prisma.sql`(invoice_number LIKE CONCAT('%', ${q}, '%') OR customer_name LIKE CONCAT('%', ${q}, '%'))`
+        );
+        const whereSql = Prisma.sql`WHERE ${Prisma.join(
+          conditions,
+          Prisma.sql` AND `
+        )}`;
+
+        const scoreSql = Prisma.sql`
+          CASE
+            WHEN invoice_number = ${q} THEN 100
+            WHEN customer_name = ${q} THEN 90
+            WHEN invoice_number LIKE CONCAT(${q}, '%') THEN 80
+            WHEN customer_name LIKE CONCAT(${q}, '%') THEN 70
+            WHEN invoice_number LIKE CONCAT('%', ${q}, '%') THEN 60
+            WHEN customer_name LIKE CONCAT('%', ${q}, '%') THEN 50
+            ELSE 0
+          END AS score
+        `;
+
+        const rows = await prisma.$queryRaw(
+          Prisma.sql`
+            SELECT invoice_id, ${scoreSql}
+            FROM invoices
+            ${whereSql}
+            ORDER BY score DESC, created_at DESC
+            LIMIT ${topLimit}
+          `
+        );
+
+        const idOrder = [];
+        const idSet = new Set();
+        for (const r of rows || []) {
+          const sc = Number(r?.score ?? 0);
+          const id = r?.invoice_id;
+          if (id && sc > 0 && !idSet.has(id)) {
+            idSet.add(id);
+            idOrder.push(id);
+          }
+        }
+
+        if (idOrder.length === 0) {
+          return NextResponse.json(
+            {
+              data: [],
+              pagination: {
+                total: 0,
+                page: 1,
+                limit: topLimit,
+                totalPages: 1,
+                hasNextPage: false,
+                hasPrevPage: false,
+              },
+            },
+            { status: 200 }
+          );
+        }
+
+        const items = await prisma.invoices.findMany({
+          where: { invoice_id: { in: idOrder } },
+          include: {
+            barcodes: true,
+            createdBy: {
+              select: {
+                id_user: true,
+                username: true,
+                profile_user: { select: { user_name: true } },
+              },
+            },
+          },
+        });
+
+        // Susun sesuai urutan skor/idOrder
+        const byId = new Map(items.map((x) => [x.invoice_id, x]));
+        const ordered = idOrder.map((id) => byId.get(id)).filter(Boolean);
+
+        const invoices = ordered.map((inv) => {
+          const creatorName =
+            inv.createdBy?.profile_user?.user_name ||
+            inv.createdBy?.username ||
+            null;
+          const creatorId2 =
+            inv.created_by_user_id || inv.createdBy?.id_user || null;
+          const { createdBy, ...rest } = inv;
+
+          const barcodes = Array.isArray(rest.barcodes)
+            ? rest.barcodes.map((b) => {
+                if (!b?.barcode_image_path) return b;
+                if (
+                  b.barcode_image_path &&
+                  b.barcode_image_path.startsWith("http")
+                ) {
+                  return { ...b, barcode_image_url: b.barcode_image_path };
+                } else {
+                  return { ...b, barcode_image_url: null };
+                }
+              })
+            : rest.barcodes;
+
+          let pdf_public_url = null;
+          if (rest.pdf_path) {
+            try {
+              if (rest.pdf_path.startsWith("http"))
+                pdf_public_url = rest.pdf_path;
+            } catch (_) {}
+          }
+
+          return {
+            ...rest,
+            barcodes,
+            pdf_public_url,
+            created_by_user_id: creatorId2,
+            created_by: creatorName,
+          };
+        });
+
+        return NextResponse.json(
+          {
+            data: invoices,
+            pagination: {
+              total: invoices.length,
+              page: 1,
+              limit: topLimit,
+              totalPages: 1,
+              hasNextPage: false,
+              hasPrevPage: false,
+            },
+          },
+          { status: 200 }
+        );
+      } catch (e) {
+        console.error("GET /invoices search_mode=top error:", e);
+        // Fallback ke alur biasa jika terjadi error
+      }
+    }
     // Backfill: setelah kolom unpaid dibuat NOT NULL, baris lama bisa masih NULL.
     // Lakukan perbaikan cepat: set unpaid = total_amount untuk baris NULL agar Prisma tidak error P2032.
     try {
-      const nulls = await prisma.$queryRaw`SELECT invoice_id, total_amount FROM invoices WHERE unpaid IS NULL`;
+      const nulls =
+        await prisma.$queryRaw`SELECT invoice_id, total_amount FROM invoices WHERE unpaid IS NULL`;
       if (Array.isArray(nulls) && nulls.length) {
         for (const row of nulls) {
           try {
@@ -406,17 +578,20 @@ export async function GET(req) {
       };
     });
 
-    return NextResponse.json({
-      data: invoices,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page * limit < total,
-        hasPrevPage: page > 1,
+    return NextResponse.json(
+      {
+        data: invoices,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: page * limit < total,
+          hasPrevPage: page > 1,
+        },
       },
-    }, { status: 200 });
+      { status: 200 }
+    );
   } catch (error) {
     console.error("GET /invoices error:", error);
     return NextResponse.json(

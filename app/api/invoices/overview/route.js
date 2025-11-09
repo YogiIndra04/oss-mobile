@@ -59,8 +59,8 @@ export async function GET(req) {
       ...(q
         ? {
             OR: [
-              { invoice_number: { contains: q, mode: "insensitive" } },
-              { customer_name: { contains: q, mode: "insensitive" } },
+              { invoice_number: { contains: q } },
+              { customer_name: { contains: q } },
             ],
           }
         : {}),
@@ -144,4 +144,3 @@ export async function GET(req) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

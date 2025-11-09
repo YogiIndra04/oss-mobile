@@ -60,6 +60,7 @@ export async function middleware(req) {
         "/api/tools", // admin utilities (e.g., storage migration)
         "/api/currency_rates", // admin-only currency endpoints
         "/api/debug/watzap",
+        "/api/cron/invoices/due-tomorrow",
       ],
       konsultan: [
         "/api/companies",

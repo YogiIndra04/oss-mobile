@@ -109,6 +109,13 @@ export async function PUT(req, { params }) {
       "currency_exchange_rate_date"
     );
     const file = formData.get("pdf_path"); // ✅ ganti pakai pdf_path
+    const pdfUrlFromField =
+      typeof file === "string" && file.trim().startsWith("http")
+        ? file.trim()
+        : typeof formData.get("pdf_url") === "string" &&
+          formData.get("pdf_url").trim().startsWith("http")
+        ? formData.get("pdf_url").trim()
+        : null;
 
     // Cari invoice lama
     const oldInvoice = await prisma.invoices.findUnique({
@@ -124,7 +131,10 @@ export async function PUT(req, { params }) {
     let pdfUrl = null;
 
     // Kalau ada file PDF baru → upload ke Supabase
-    if (file && file.name) {
+    if (pdfUrlFromField) {
+      pdfPath = pdfUrlFromField;
+      pdfUrl = pdfUrlFromField;
+    } else if (file && file.name) {
       const rawNumber =
         invoice_number && String(invoice_number).trim()
           ? String(invoice_number).trim()
@@ -263,11 +273,12 @@ export async function PUT(req, { params }) {
       },
     });
 
-    // Regenerate barcode kalau ada pdfUrl
-    if (pdfUrl) {
-      const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
-      const proxyLink = `${origin}/api/files/invoice/${id}`;
-      const barcodeBuffer = await QRCode.toBuffer(pdfUrl, {
+    // Regenerate barcode jika ada URL PDF baru, atau sebelumnya kosong lalu sekarang ada
+    const hadNoPdfBefore =
+      !oldInvoice?.pdf_path && !!(pdfUrl || updatedInvoice?.pdf_path);
+    const fileUrlDirect = pdfUrl || (updatedInvoice?.pdf_path ?? null);
+    if (fileUrlDirect && (pdfUrl || hadNoPdfBefore)) {
+      const barcodeBuffer = await QRCode.toBuffer(fileUrlDirect, {
         type: "png",
         width: 300,
         errorCorrectionLevel: "H",
@@ -286,13 +297,14 @@ export async function PUT(req, { params }) {
       await prisma.barcodes.upsert({
         where: { invoice_id: id },
         update: {
-          barcode_link: proxyLink,
+          // QR code link langsung ke PDF public URL
+          barcode_link: fileUrlDirect,
           barcode_image_path: up?.publicUrl || up?.path || null,
           updated_at: new Date(),
         },
         create: {
           invoice_id: id,
-          barcode_link: proxyLink,
+          barcode_link: fileUrlDirect,
           barcode_image_path: up?.publicUrl || up?.path || null,
         },
       });
@@ -334,39 +346,40 @@ export async function PUT(req, { params }) {
       include: { barcodes: true },
     });
 
-    // WhatsApp group notification for update (best-effort)
+    // WhatsApp group notification untuk update: kirim hanya jika FE menandai final (notify_wa === "1"). Use direct CDN pdf_path (no proxy).
     try {
-      let handlerName = "Unknown";
-      try {
-        const token = req.headers.get("authorization")?.split(" ")[1];
-        const decoded = token ? verifyJwt(token) : null;
-        if (decoded?.id_user) {
-          const u = await prisma.users.findUnique({
-            where: { id_user: decoded.id_user },
-            select: {
-              username: true,
-              profile_user: { select: { user_name: true } },
-            },
-          });
-          handlerName =
-            u?.profile_user?.user_name ||
-            u?.username ||
-            String(decoded.id_user);
+      const notifyWa = formData.get("notify_wa");
+      const shouldNotify = String(notifyWa || "") === "1";
+      if (shouldNotify) {
+        let handlerName = "Unknown";
+        try {
+          const token = req.headers.get("authorization")?.split(" ")[1];
+          const decoded = token ? verifyJwt(token) : null;
+          if (decoded?.id_user) {
+            const u = await prisma.users.findUnique({
+              where: { id_user: decoded.id_user },
+              select: {
+                username: true,
+                profile_user: { select: { user_name: true } },
+              },
+            });
+            handlerName =
+              u?.profile_user?.user_name ||
+              u?.username ||
+              String(decoded.id_user);
+          }
+        } catch {}
+
+        const msg = [
+          "✅ Invoice Update!",
+          `Nomor Invoice : ${finalInvoice.invoice_number}`,
+          `Nama Customer : ${finalInvoice.customer_name}`,
+          `PIC : ${handlerName}`,
+        ].join("\n");
+
+        if (finalInvoice?.pdf_path) {
+          await sendGroupFile(finalInvoice.pdf_path, msg);
         }
-      } catch {}
-
-      const msg = [
-        "Invoice telah diupdate!",
-        `Nomor Invoice : ${finalInvoice.invoice_number}`,
-        `Nama Customer : ${finalInvoice.customer_name}`,
-        `Di handle oleh : ${handlerName}`,
-      ].join("\n");
-
-      const fileUrl = pdfUrl || finalInvoice.pdf_path || null;
-      if (fileUrl) {
-        await sendGroupFile(fileUrl, msg);
-      } else {
-        await sendGroupMessage(msg);
       }
     } catch (e) {
       console.error("WA notify (update invoice) failed:", e);
@@ -491,6 +504,7 @@ export async function DELETE(req, { params }) {
       } catch {}
 
       const msg = [
+        "❌ Invoice Dihapus!",
         `Nomor Invoice : ${existing.invoice_number}`,
         `Nama Customer : ${existing.customer_name}`,
         `Dihapus oleh : ${handlerName}`,
