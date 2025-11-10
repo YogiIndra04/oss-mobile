@@ -5,7 +5,7 @@ export async function GET(req, { params }) {
     const { id } = await params;
     const inv = await prisma.invoices.findUnique({
       where: { invoice_id: id },
-      select: { pdf_path: true, invoice_number: true },
+      select: { pdf_path: true, invoice_number: true, customer_name: true },
     });
     if (!inv?.pdf_path) {
       return new Response(JSON.stringify({ error: "PDF not found" }), {
@@ -25,10 +25,13 @@ export async function GET(req, { params }) {
       );
     }
     const buf = await upstream.arrayBuffer();
-    const safeName = String(inv.invoice_number || "invoice")
-      .trim()
-      .replace(/[^a-zA-Z0-9_.-]+/g, "-");
-    const filename = `${safeName || "invoice"}.pdf`;
+    const safe = (s) =>
+      String(s || "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+        .replace(/-+/g, "-");
+    const filename = `invoice_${safe(inv.invoice_number)}_${safe(inv.customer_name)}.pdf`;
     const len = upstream.headers.get("content-length");
     return new Response(buf, {
       status: 200,

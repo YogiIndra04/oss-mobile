@@ -20,6 +20,7 @@ export async function middleware(req) {
     "/api/storage",
     "/api/files/invoice/",
     "/api/debug/watzap",
+    "/api/files",
   ];
 
   if (publicPaths.some((path) => pathname.startsWith(path))) {

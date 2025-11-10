@@ -136,11 +136,16 @@ export async function POST(req) {
       pdfPath = pdfUrlFromField;
       pdfUrl = pdfUrlFromField;
     } else if (file && file.name) {
-      const safeNumber = String(invoice_number)
-        .trim()
-        .replace(/[^a-z0-9_-]+/gi, "-");
+      const safe = (s) =>
+        String(s || "")
+          .trim()
+          .replace(/\s+/g, "-")
+          .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+          .replace(/-+/g, "-");
+      const safeNumber = safe(invoice_number);
+      const safeCustomer = safe(customer_name);
       const ext = file.name.split(".").pop() || "pdf";
-      const nameHint = `invoice_${safeNumber}.${ext}`;
+      const nameHint = `invoice_${safeNumber}_${safeCustomer}.${ext}`;
       const { path, publicUrl } = await uploadToStorage(
         file,
         "uploads",
@@ -263,7 +268,23 @@ export async function POST(req) {
           `PIC : ${handlerName}`,
         ].join("\n");
 
-        await sendGroupFile(pdfUrl, msg);
+        // Build friendly file name: invoice_<number>_<customer>.pdf
+        const safe = (s) =>
+          String(s || "")
+            .trim()
+            .replace(/\s+/g, "-")
+            .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+            .replace(/-+/g, "-");
+        const fn = `invoice_${safe(invoice_number)}_${safe(customer_name)}`;
+
+        // Send via proxy URL (non-named); fallback to direct URL
+        try {
+          const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
+          const proxyUrl = `${origin}/api/files/invoice/${newInvoice.invoice_id}`;
+          await sendGroupFile(proxyUrl, msg, fn);
+        } catch {
+          await sendGroupFile(pdfUrl, msg, fn);
+        }
       }
     } catch (e) {
       console.error("WA notify (create invoice) failed:", e);

@@ -139,9 +139,20 @@ export async function PUT(req, { params }) {
         invoice_number && String(invoice_number).trim()
           ? String(invoice_number).trim()
           : oldInvoice.invoice_number || id;
-      const safeNumber = rawNumber.replace(/[^a-z0-9_-]+/gi, "-");
+      const rawCustomer =
+        customer_name && String(customer_name).trim()
+          ? String(customer_name).trim()
+          : oldInvoice.customer_name || "customer";
+      const safe = (s) =>
+        String(s || "")
+          .trim()
+          .replace(/\s+/g, "-")
+          .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+          .replace(/-+/g, "-");
+      const safeNumber = safe(rawNumber);
+      const safeCustomer = safe(rawCustomer);
       const ext = file.name.split(".").pop() || "pdf";
-      const nameHint = `invoice_${safeNumber}.${ext}`;
+      const nameHint = `invoice_${safeNumber}_${safeCustomer}.${ext}`;
       const { path, publicUrl } = await uploadToStorage(
         file,
         "uploads",
@@ -275,7 +286,9 @@ export async function PUT(req, { params }) {
 
     // Do not regenerate barcode on update. Create once if missing using stable proxy link.
     try {
-      const existingBarcode = await prisma.barcodes.findUnique({ where: { invoice_id: id } });
+      const existingBarcode = await prisma.barcodes.findUnique({
+        where: { invoice_id: id },
+      });
       if (!existingBarcode) {
         const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
         const proxyLink = `${origin}/api/files/invoice/${id}`;
@@ -370,7 +383,23 @@ export async function PUT(req, { params }) {
         ].join("\n");
 
         if (finalInvoice?.pdf_path) {
-          await sendGroupFile(finalInvoice.pdf_path, msg);
+          const safe = (s) =>
+            String(s || "")
+              .trim()
+              .replace(/\s+/g, "-")
+              .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+              .replace(/-+/g, "-");
+          const fn = `invoice_${safe(finalInvoice.invoice_number)}_${safe(
+            finalInvoice.customer_name
+          )}`;
+          try {
+            const origin =
+              process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
+            const proxyUrl = `${origin}/api/files/invoice/${id}`;
+            await sendGroupFile(proxyUrl, msg, fn);
+          } catch {
+            await sendGroupFile(finalInvoice.pdf_path, msg, fn);
+          }
         }
       }
     } catch (e) {
