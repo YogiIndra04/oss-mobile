@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { recomputeTotals, recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
 
 // GET by ID
 export async function GET(req, { params }) {
@@ -146,49 +147,9 @@ export async function PUT(req, { params }) {
         updated_at: new Date(),
       },
     });
-    // recompute invoice totals
-    try {
-      const items = await prisma.productdetail.findMany({
-        where: { invoice_id: nextInvoiceId },
-        select: { line_total_idr: true, total_product_amount: true },
-      });
-      const sumIdr = items.reduce((acc, it) => {
-        const v = it.line_total_idr ?? it.total_product_amount ?? 0;
-        return acc + Number(v);
-      }, 0);
-      const invHeader = await prisma.invoices.findUnique({
-        where: { invoice_id: nextInvoiceId },
-        select: { invoice_discount_type: true, invoice_discount_value: true },
-      });
-      let discInv = 0;
-      if (
-        invHeader?.invoice_discount_type &&
-        invHeader?.invoice_discount_value != null
-      ) {
-        if (invHeader.invoice_discount_type === "PERCENT") {
-          discInv = (sumIdr * Number(invHeader.invoice_discount_value)) / 100;
-        } else {
-          discInv = Number(invHeader.invoice_discount_value);
-        }
-        if (discInv > sumIdr) discInv = sumIdr;
-      }
-      const subtotalAfter = sumIdr - discInv;
-      await prisma.invoices.update({
-        where: { invoice_id: nextInvoiceId },
-        data: {
-          subtotal_before_invoice_discount: new Prisma.Decimal(
-            sumIdr
-          ).toDecimalPlaces(2),
-          invoice_discount_amount: new Prisma.Decimal(discInv).toDecimalPlaces(
-            2
-          ),
-          subtotal_after_invoice_discount: new Prisma.Decimal(
-            subtotalAfter
-          ).toDecimalPlaces(2),
-          total_amount: new Prisma.Decimal(subtotalAfter).toDecimalPlaces(2),
-        },
-      });
-    } catch {}
+    // recompute totals and unpaid/status
+    try { await recomputeTotals(nextInvoiceId); } catch {}
+    try { await recomputeUnpaidAndStatus(nextInvoiceId); } catch {}
 
     return new Response(JSON.stringify(updated), { status: 200 });
   } catch (error) {
@@ -203,7 +164,17 @@ export async function PUT(req, { params }) {
 export async function DELETE(req, { params }) {
   try {
     const { id } = params;
+    // Get invoice_id then delete
+    const before = await prisma.productdetail.findUnique({
+      where: { product_detail_id: id },
+      select: { invoice_id: true },
+    });
     await prisma.productdetail.delete({ where: { product_detail_id: id } });
+
+    // Recompute totals and unpaid/status after deletion
+    try { await recomputeTotals(before?.invoice_id); } catch {}
+    try { await recomputeUnpaidAndStatus(before?.invoice_id); } catch {}
+
     return new Response(JSON.stringify({ message: "Deleted successfully" }), {
       status: 200,
     });

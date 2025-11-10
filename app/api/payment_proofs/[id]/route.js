@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { uploadToStorage } from "@/lib/utils/uploadStorage";
 import { NextResponse } from "next/server";
+import { recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
 
 // ✅ GET detail
 export async function GET(req, { params }) {
@@ -63,35 +64,8 @@ export async function PUT(req, { params }) {
       },
     });
 
-    // Recompute unpaid & payment_status berdasarkan semua proof Verified untuk invoice ini
-    try {
-      const invoice_id = oldProof.invoice_id;
-      const invoice = await prisma.invoices.findUnique({
-        where: { invoice_id },
-        select: { total_amount: true, unpaid: true, payment_status: true },
-      });
-      if (invoice) {
-        const agg = await prisma.paymentproofs.aggregate({
-          where: { invoice_id, proof_status: "Verified" },
-          _sum: { proof_amount: true },
-        });
-        const total = new Prisma.Decimal(invoice.total_amount || 0);
-        const paid = new Prisma.Decimal(agg?._sum?.proof_amount || 0);
-        if (paid.greaterThan(0)) {
-          let nextUnpaid = total.sub(paid);
-          if (nextUnpaid.lessThan(0)) nextUnpaid = new Prisma.Decimal(0);
-          const nextStatus = nextUnpaid.equals(0) ? "Lunas" : "Mencicil";
-          const curUnpaid = invoice.unpaid == null ? null : new Prisma.Decimal(invoice.unpaid);
-          const curStatus = String(invoice.payment_status || "");
-          if (curUnpaid === null || !curUnpaid.equals(nextUnpaid) || curStatus !== nextStatus) {
-            await prisma.invoices.update({
-              where: { invoice_id },
-              data: { unpaid: nextUnpaid, payment_status: nextStatus },
-            });
-          }
-        }
-      }
-    } catch (e) {
+    // Recompute unpaid & payment_status via helper
+    try { await recomputeUnpaidAndStatus(oldProof.invoice_id); } catch (e) {
       console.error("Recompute invoice after payment proof update failed:", e);
     }
 
@@ -116,37 +90,8 @@ export async function DELETE(req, { params }) {
       where: { payment_proof_id: params.id },
     });
 
-    // Recompute setelah delete (jika ada perubahan, update invoice)
-    try {
-      const invoice_id = proof.invoice_id;
-      const invoice = await prisma.invoices.findUnique({
-        where: { invoice_id },
-        select: { total_amount: true, unpaid: true, payment_status: true },
-      });
-      if (invoice) {
-        const agg = await prisma.paymentproofs.aggregate({
-          where: { invoice_id, proof_status: "Verified" },
-          _sum: { proof_amount: true },
-        });
-        const total = new Prisma.Decimal(invoice.total_amount || 0);
-        const paid = new Prisma.Decimal(agg?._sum?.proof_amount || 0);
-        if (paid.greaterThan(0)) {
-          let nextUnpaid = total.sub(paid);
-          if (nextUnpaid.lessThan(0)) nextUnpaid = new Prisma.Decimal(0);
-          const nextStatus = nextUnpaid.equals(0) ? "Lunas" : "Mencicil";
-          const curUnpaid = invoice.unpaid == null ? null : new Prisma.Decimal(invoice.unpaid);
-          const curStatus = String(invoice.payment_status || "");
-          if (curUnpaid === null || !curUnpaid.equals(nextUnpaid) || curStatus !== nextStatus) {
-            await prisma.invoices.update({
-              where: { invoice_id },
-              data: { unpaid: nextUnpaid, payment_status: nextStatus },
-            });
-          }
-        } else {
-          // Tidak ada pembayaran terverifikasi tersisa; biarkan status/invoice apa adanya sesuai permintaan
-        }
-      }
-    } catch (e) {
+    // Recompute setelah delete via helper
+    try { await recomputeUnpaidAndStatus(proof.invoice_id); } catch (e) {
       console.error("Recompute invoice after payment proof delete failed:", e);
     }
 

@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { uploadToStorage } from "@/lib/utils/uploadStorage";
 import { Prisma } from "@prisma/client";
+import { recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
 import { NextResponse } from "next/server";
 
 // CREATE
@@ -69,41 +70,10 @@ export async function POST(req) {
       },
     });
 
-    // Jika Verified, hitung ulang unpaid & payment_status invoice terkait
+    // Jika Verified, recompute unpaid & payment_status invoice terkait
     try {
       if (String(proof_status).toLowerCase() === "verified") {
-        const invoice = await prisma.invoices.findUnique({
-          where: { invoice_id },
-          select: { total_amount: true, unpaid: true, payment_status: true },
-        });
-        if (invoice) {
-          const agg = await prisma.paymentproofs.aggregate({
-            where: { invoice_id, proof_status: "Verified" },
-            _sum: { proof_amount: true },
-          });
-          const total = new Prisma.Decimal(invoice.total_amount || 0);
-          const paid = new Prisma.Decimal(agg?._sum?.proof_amount || 0);
-          if (paid.greaterThan(0)) {
-            let nextUnpaid = total.sub(paid);
-            if (nextUnpaid.lessThan(0)) nextUnpaid = new Prisma.Decimal(0);
-            const nextStatus = nextUnpaid.equals(0) ? "Lunas" : "Mencicil";
-            const curUnpaid =
-              invoice.unpaid == null
-                ? null
-                : new Prisma.Decimal(invoice.unpaid);
-            const curStatus = String(invoice.payment_status || "");
-            if (
-              curUnpaid === null ||
-              !curUnpaid.equals(nextUnpaid) ||
-              curStatus !== nextStatus
-            ) {
-              await prisma.invoices.update({
-                where: { invoice_id },
-                data: { unpaid: nextUnpaid, payment_status: nextStatus },
-              });
-            }
-          }
-        }
+        await recomputeUnpaidAndStatus(invoice_id);
       }
     } catch (e) {
       console.error("Recompute invoice after payment proof create failed:", e);

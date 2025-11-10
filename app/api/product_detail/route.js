@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { recomputeTotals, recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
 
 // CREATE ProductDetail
 export async function POST(req) {
@@ -81,48 +82,12 @@ export async function POST(req) {
       },
     });
 
-    // Recompute invoice subtotal/discount/total in IDR
+    // Recompute totals and unpaid/status after item changes
     try {
-      const items = await prisma.productdetail.findMany({
-        where: { invoice_id: body.invoice_id },
-        select: { line_total_idr: true, total_product_amount: true },
-      });
-      const sumIdr = items.reduce((acc, it) => {
-        const v = it.line_total_idr ?? it.total_product_amount ?? 0;
-        return acc + Number(v);
-      }, 0);
-      const invHeader = await prisma.invoices.findUnique({
-        where: { invoice_id: body.invoice_id },
-        select: { invoice_discount_type: true, invoice_discount_value: true },
-      });
-      let discInv = 0;
-      if (
-        invHeader?.invoice_discount_type &&
-        invHeader?.invoice_discount_value != null
-      ) {
-        if (invHeader.invoice_discount_type === "PERCENT") {
-          discInv = (sumIdr * Number(invHeader.invoice_discount_value)) / 100;
-        } else {
-          discInv = Number(invHeader.invoice_discount_value);
-        }
-        if (discInv > sumIdr) discInv = sumIdr;
-      }
-      const subtotalAfter = sumIdr - discInv;
-      await prisma.invoices.update({
-        where: { invoice_id: body.invoice_id },
-        data: {
-          subtotal_before_invoice_discount: new Prisma.Decimal(
-            sumIdr
-          ).toDecimalPlaces(2),
-          invoice_discount_amount: new Prisma.Decimal(discInv).toDecimalPlaces(
-            2
-          ),
-          subtotal_after_invoice_discount: new Prisma.Decimal(
-            subtotalAfter
-          ).toDecimalPlaces(2),
-          total_amount: new Prisma.Decimal(subtotalAfter).toDecimalPlaces(2),
-        },
-      });
+      await recomputeTotals(body.invoice_id);
+    } catch {}
+    try {
+      await recomputeUnpaidAndStatus(body.invoice_id);
     } catch {}
 
     return new Response(JSON.stringify(productDetail), { status: 201 });

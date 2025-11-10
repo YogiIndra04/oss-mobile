@@ -34,7 +34,7 @@ export async function GET(req, { params }) {
       status: 200,
       headers: {
         "content-type": "application/pdf",
-        "content-disposition": `attachment; filename="${filename}"`,
+        "content-disposition": `inline; filename="${filename}"`,
         ...(len ? { "content-length": len } : {}),
         // Disable caching so clients always see the latest content
         "cache-control": "no-store, no-cache, must-revalidate, max-age=0",

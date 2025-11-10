@@ -183,11 +183,14 @@ export async function POST(req) {
 
     // FE is responsible for embedding QR into the PDF; backend stores as-is
 
-    // Generate and store barcode image
+    // Generate and store barcode image ONCE using stable proxy link
+    // Proxy ensures link stays the same even if pdf_path changes later.
     let newBarcode = null;
-    if (pdfUrl) {
-      // Generate QR using the direct public PDF URL (scan goes to actual PDF)
-      const barcodeBuffer = await QRCode.toBuffer(pdfUrl, {
+    try {
+      const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
+      const proxyLink = `${origin}/api/files/invoice/${newInvoice.invoice_id}`;
+
+      const barcodeBuffer = await QRCode.toBuffer(proxyLink, {
         type: "png",
         width: 300,
         errorCorrectionLevel: "H",
@@ -206,12 +209,12 @@ export async function POST(req) {
       newBarcode = await prisma.barcodes.create({
         data: {
           invoice_id: newInvoice.invoice_id,
-          // Point QR link directly to the public PDF URL
-          barcode_link: pdfUrl,
-          barcode_image_path: barcodePublicUrl || barcodeFileName,
+          // Use stable proxy link so QR never changes
+          barcode_link: proxyLink,
+          barcode_image_path: barcodePublicUrl,
         },
       });
-    }
+    } catch (_) {}
 
     // Attach creator and enforce unpaid = total_amount (safety re-write)
     await prisma.invoices.update({

@@ -273,42 +273,34 @@ export async function PUT(req, { params }) {
       },
     });
 
-    // Regenerate barcode jika ada URL PDF baru, atau sebelumnya kosong lalu sekarang ada
-    const hadNoPdfBefore =
-      !oldInvoice?.pdf_path && !!(pdfUrl || updatedInvoice?.pdf_path);
-    const fileUrlDirect = pdfUrl || (updatedInvoice?.pdf_path ?? null);
-    if (fileUrlDirect && (pdfUrl || hadNoPdfBefore)) {
-      const barcodeBuffer = await QRCode.toBuffer(fileUrlDirect, {
-        type: "png",
-        width: 300,
-        errorCorrectionLevel: "H",
-      });
-
-      const nameHint = `barcode-${id}.png`;
-      const up = await uploadBufferToStorage(
-        barcodeBuffer,
-        "uploads",
-        "png",
-        "image/png",
-        nameHint
-      );
-
-      // FE embeds QR into PDF; backend stores as-is, only syncs links
-      await prisma.barcodes.upsert({
-        where: { invoice_id: id },
-        update: {
-          // QR code link langsung ke PDF public URL
-          barcode_link: fileUrlDirect,
-          barcode_image_path: up?.publicUrl || up?.path || null,
-          updated_at: new Date(),
-        },
-        create: {
-          invoice_id: id,
-          barcode_link: fileUrlDirect,
-          barcode_image_path: up?.publicUrl || up?.path || null,
-        },
-      });
-    }
+    // Do not regenerate barcode on update. Create once if missing using stable proxy link.
+    try {
+      const existingBarcode = await prisma.barcodes.findUnique({ where: { invoice_id: id } });
+      if (!existingBarcode) {
+        const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
+        const proxyLink = `${origin}/api/files/invoice/${id}`;
+        const barcodeBuffer = await QRCode.toBuffer(proxyLink, {
+          type: "png",
+          width: 300,
+          errorCorrectionLevel: "H",
+        });
+        const nameHint = `barcode-${id}.png`;
+        const up = await uploadBufferToStorage(
+          barcodeBuffer,
+          "uploads",
+          "png",
+          "image/png",
+          nameHint
+        );
+        await prisma.barcodes.create({
+          data: {
+            invoice_id: id,
+            barcode_link: proxyLink,
+            barcode_image_path: up?.publicUrl || up?.path || null,
+          },
+        });
+      }
+    } catch (_) {}
 
     // Hitung subtotal & diskon invoice setelah update
     const items = await prisma.productdetail.findMany({
