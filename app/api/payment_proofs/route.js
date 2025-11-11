@@ -1,7 +1,7 @@
+import { recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
 import prisma from "@/lib/prisma";
 import { uploadToStorage } from "@/lib/utils/uploadStorage";
-import { Prisma } from "@prisma/client";
-import { recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
+import { sendGroupMessage } from "@/lib/utils/whatsappGroup";
 import { NextResponse } from "next/server";
 
 // CREATE
@@ -56,6 +56,16 @@ export async function POST(req) {
       nextSequence = Number(currentMax || 0) + 1;
     } catch {}
 
+    // Hitung Verified sum sebelum create (untuk sinyal pembaruan PDF)
+    let verifiedBefore = 0;
+    try {
+      const agg = await prisma.paymentproofs.aggregate({
+        where: { invoice_id, proof_status: "Verified" },
+        _sum: { proof_amount: true },
+      });
+      verifiedBefore = Number(agg?._sum?.proof_amount || 0);
+    } catch {}
+
     const newProof = await prisma.paymentproofs.create({
       data: {
         invoice_id,
@@ -79,7 +89,64 @@ export async function POST(req) {
       console.error("Recompute invoice after payment proof create failed:", e);
     }
 
-    return NextResponse.json(newProof, { status: 201 });
+    // Notifikasi WA (pengajuan/verified/rejected) tanpa file
+    try {
+      const inv = await prisma.invoices.findUnique({
+        where: { invoice_id },
+        select: { invoice_number: true, customer_name: true },
+      });
+      const uploader = await prisma.users.findUnique({
+        where: { id_user: uploaded_by_user_id },
+        select: {
+          username: true,
+          profile_user: { select: { user_name: true } },
+        },
+      });
+      const picName =
+        uploader?.profile_user?.user_name ||
+        uploader?.username ||
+        uploaded_by_user_id;
+      const d = proof_date ? new Date(proof_date) : new Date();
+      const tanggal = d.toISOString().slice(0, 10);
+      const jumlah = (() => {
+        try {
+          return Number(proof_amount || 0).toLocaleString("id-ID");
+        } catch {
+          return String(proof_amount || 0);
+        }
+      })();
+      const s = String(proof_status || "").toLowerCase();
+      let header = "📝[PAYMENT PROOF] Pengajuan Baru";
+      if (s === "verified") header = "💵[PAYMENT PROOF] Diverifikasi";
+      else if (s === "rejected") header = "💸[PAYMENT PROOF] Ditolak";
+      const lines = [
+        header,
+        `Invoice: ${inv?.invoice_number || "-"}`,
+        `Customer: ${inv?.customer_name || "-"}`,
+        `PIC: ${picName}`,
+        `Tanggal: ${tanggal}`,
+        `Jumlah: IDR ${jumlah}`,
+      ];
+      await sendGroupMessage(lines.join("\n"));
+    } catch (e) {
+      console.error("WA notify (payment proof create) failed:", e);
+    }
+
+    // Hitung Verified sum setelah create
+    let verifiedAfter = verifiedBefore;
+    try {
+      const agg = await prisma.paymentproofs.aggregate({
+        where: { invoice_id, proof_status: "Verified" },
+        _sum: { proof_amount: true },
+      });
+      verifiedAfter = Number(agg?._sum?.proof_amount || 0);
+    } catch {}
+    const pdf_should_update = verifiedAfter !== verifiedBefore;
+
+    return NextResponse.json(
+      { ...newProof, pdf_should_update },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("POST /payment_proofs error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -1,8 +1,9 @@
-import prisma from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
-import { uploadToStorage } from "@/lib/utils/uploadStorage";
-import { NextResponse } from "next/server";
 import { recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
+import { verifyJwt } from "@/lib/jwt";
+import prisma from "@/lib/prisma";
+import { uploadToStorage } from "@/lib/utils/uploadStorage";
+import { sendGroupMessage } from "@/lib/utils/whatsappGroup";
+import { NextResponse } from "next/server";
 
 // ✅ GET detail
 export async function GET(req, { params }) {
@@ -50,6 +51,16 @@ export async function PUT(req, { params }) {
       filePath = uploaded?.publicUrl || uploaded?.path || filePath;
     }
 
+    // Sum Verified sebelum update
+    let verifiedBefore = 0;
+    try {
+      const agg = await prisma.paymentproofs.aggregate({
+        where: { invoice_id: oldProof.invoice_id, proof_status: "Verified" },
+        _sum: { proof_amount: true },
+      });
+      verifiedBefore = Number(agg?._sum?.proof_amount || 0);
+    } catch {}
+
     const updatedProof = await prisma.paymentproofs.update({
       where: { payment_proof_id: params.id },
       data: {
@@ -65,11 +76,83 @@ export async function PUT(req, { params }) {
     });
 
     // Recompute unpaid & payment_status via helper
-    try { await recomputeUnpaidAndStatus(oldProof.invoice_id); } catch (e) {
+    try {
+      await recomputeUnpaidAndStatus(oldProof.invoice_id);
+    } catch (e) {
       console.error("Recompute invoice after payment proof update failed:", e);
     }
 
-    return NextResponse.json(updatedProof);
+    // Notifikasi WA jika status berubah menjadi Verified/Rejected
+    try {
+      const oldStatus = String(oldProof.proof_status || "");
+      const newStatus = String(updatedProof.proof_status || "");
+      const changed = oldStatus !== newStatus;
+      const lowered = newStatus.toLowerCase();
+      if (changed && (lowered === "verified" || lowered === "rejected")) {
+        // Resolve PIC dari token (verifikator/penolak)
+        let pic = "Unknown";
+        try {
+          const token = req.headers.get("authorization")?.split(" ")[1];
+          const decoded = token ? verifyJwt(token) : null;
+          if (decoded?.id_user) {
+            const u = await prisma.users.findUnique({
+              where: { id_user: decoded.id_user },
+              select: {
+                username: true,
+                profile_user: { select: { user_name: true } },
+              },
+            });
+            pic = u?.profile_user?.user_name || u?.username || decoded.id_user;
+          }
+        } catch {}
+
+        const inv = await prisma.invoices.findUnique({
+          where: { invoice_id: oldProof.invoice_id },
+          select: { invoice_number: true, customer_name: true },
+        });
+        const d = updatedProof.proof_date
+          ? new Date(updatedProof.proof_date)
+          : new Date();
+        const tanggal = d.toISOString().slice(0, 10);
+        const jumlah = (() => {
+          try {
+            return Number(updatedProof.proof_amount || 0).toLocaleString(
+              "id-ID"
+            );
+          } catch {
+            return String(updatedProof.proof_amount || 0);
+          }
+        })();
+        const header =
+          lowered === "verified"
+            ? "💵[PAYMENT PROOF] Diverifikasi"
+            : "💸[PAYMENT PROOF] Ditolak";
+        const msg = [
+          header,
+          `Invoice: ${inv?.invoice_number || "-"}`,
+          `Customer: ${inv?.customer_name || "-"}`,
+          `PIC: ${pic}`,
+          `Tanggal: ${tanggal}`,
+          `Jumlah: IDR ${jumlah}`,
+        ].join("\n");
+        await sendGroupMessage(msg);
+      }
+    } catch (e) {
+      console.error("WA notify (payment proof update) failed:", e);
+    }
+
+    // Sum Verified setelah update
+    let verifiedAfter = verifiedBefore;
+    try {
+      const agg = await prisma.paymentproofs.aggregate({
+        where: { invoice_id: oldProof.invoice_id, proof_status: "Verified" },
+        _sum: { proof_amount: true },
+      });
+      verifiedAfter = Number(agg?._sum?.proof_amount || 0);
+    } catch {}
+    const pdf_should_update = verifiedAfter !== verifiedBefore;
+
+    return NextResponse.json({ ...updatedProof, pdf_should_update });
   } catch (error) {
     console.error("PUT /payment_proofs/:id error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -86,16 +169,42 @@ export async function DELETE(req, { params }) {
     if (!proof)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // Sum Verified sebelum delete
+    let verifiedBefore = 0;
+    try {
+      const agg = await prisma.paymentproofs.aggregate({
+        where: { invoice_id: proof.invoice_id, proof_status: "Verified" },
+        _sum: { proof_amount: true },
+      });
+      verifiedBefore = Number(agg?._sum?.proof_amount || 0);
+    } catch {}
+
     await prisma.paymentproofs.delete({
       where: { payment_proof_id: params.id },
     });
 
     // Recompute setelah delete via helper
-    try { await recomputeUnpaidAndStatus(proof.invoice_id); } catch (e) {
+    try {
+      await recomputeUnpaidAndStatus(proof.invoice_id);
+    } catch (e) {
       console.error("Recompute invoice after payment proof delete failed:", e);
     }
 
-    return NextResponse.json({ message: "Payment proof deleted" });
+    // Sum Verified setelah delete
+    let verifiedAfter = verifiedBefore;
+    try {
+      const agg = await prisma.paymentproofs.aggregate({
+        where: { invoice_id: proof.invoice_id, proof_status: "Verified" },
+        _sum: { proof_amount: true },
+      });
+      verifiedAfter = Number(agg?._sum?.proof_amount || 0);
+    } catch {}
+    const pdf_should_update = verifiedAfter !== verifiedBefore;
+
+    return NextResponse.json({
+      message: "Payment proof deleted",
+      pdf_should_update,
+    });
   } catch (error) {
     console.error("DELETE /payment_proofs/:id error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

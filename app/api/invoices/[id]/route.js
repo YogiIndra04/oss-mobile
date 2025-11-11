@@ -75,6 +75,7 @@
 // }
 
 import { computeInvoice } from "@/lib/discount";
+import { recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
 import { verifyJwt } from "@/lib/jwt";
 import prisma from "@/lib/prisma";
 import {
@@ -85,7 +86,7 @@ import { sendGroupFile, sendGroupMessage } from "@/lib/utils/whatsappGroup";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 
-// UPDATE Invoice pakai form-data
+// UPDATE Invoice pakai form-data{}
 export async function PUT(req, { params }) {
   try {
     const { id } = await params;
@@ -323,12 +324,21 @@ export async function PUT(req, { params }) {
     const lineTotalsAfter = items.map(
       (i) => i.line_total_idr ?? i.total_product_amount
     );
-    const invoice_discount_type = formData.get("invoice_discount_type") || null;
-    const invDiscRaw = formData.get("invoice_discount_value");
-    const invoice_discount_value =
-      invDiscRaw != null && String(invDiscRaw).length > 0
-        ? Number(invDiscRaw)
+    // Diskon: gunakan nilai efektif (request jika dikirim; jika tidak, pakai nilai lama dari DB)
+    const sentDiscType = formData.get("invoice_discount_type");
+    const hasDiscType = sentDiscType !== null;
+    const invoice_discount_type = hasDiscType
+      ? sentDiscType || null
+      : oldInvoice.invoice_discount_type;
+    const sentDiscValRaw = formData.get("invoice_discount_value");
+    const hasDiscVal = sentDiscValRaw !== null;
+    const sentDiscVal =
+      sentDiscValRaw != null && String(sentDiscValRaw).length > 0
+        ? Number(sentDiscValRaw)
         : null;
+    const invoice_discount_value = hasDiscVal
+      ? sentDiscVal
+      : oldInvoice.invoice_discount_value;
 
     const totals = computeInvoice({
       lineTotalsAfter,
@@ -342,12 +352,27 @@ export async function PUT(req, { params }) {
       data: {
         subtotal_before_invoice_discount:
           totals.subtotal_before_invoice_discount,
-        invoice_discount_type,
-        invoice_discount_value,
+        ...(hasDiscType ? { invoice_discount_type } : {}),
+        ...(hasDiscVal ? { invoice_discount_value } : {}),
         invoice_discount_amount: totals.invoice_discount_amount,
         subtotal_after_invoice_discount: totals.subtotal_after_invoice_discount,
         total_amount: totals.total_amount,
       },
+      include: { barcodes: true },
+    });
+
+    // Recompute unpaid and payment_status based on new totals and verified payments
+    try {
+      await recomputeUnpaidAndStatus(id);
+    } catch (e) {
+      console.error(
+        "Recompute unpaid/status after invoice discount update failed:",
+        e
+      );
+    }
+
+    const latestInvoice = await prisma.invoices.findUnique({
+      where: { invoice_id: id },
       include: { barcodes: true },
     });
 
@@ -406,7 +431,7 @@ export async function PUT(req, { params }) {
       console.error("WA notify (update invoice) failed:", e);
     }
 
-    return NextResponse.json(finalInvoice, { status: 200 });
+    return NextResponse.json(latestInvoice || finalInvoice, { status: 200 });
   } catch (error) {
     console.error("PUT /invoices/[id] error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
