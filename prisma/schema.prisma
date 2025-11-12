@@ -241,6 +241,8 @@ model productdetail {
   unit_price_foreign   Decimal? @db.Decimal(18, 6)
   line_total_foreign   Decimal? @db.Decimal(18, 6)
   line_total_idr       Decimal? @db.Decimal(18, 2)
+  // audit: kurs yang dipakai pada line (jika non-IDR)
+  currency_rate_used   Decimal? @db.Decimal(18, 6)
   // total setelah diskon per-item (dipertahankan kompatibel)
   total_product_amount Decimal  @db.Decimal(10, 2)
   // informasi diskon per-item (opsional)

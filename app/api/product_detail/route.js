@@ -54,13 +54,22 @@ export async function POST(req) {
       }
     }
     const afterForeign = baseForeign.sub(discForeign);
-    const rate =
-      currencyCode === "IDR"
-        ? new Prisma.Decimal(1)
-        : new Prisma.Decimal(inv.currency_exchange_rate || 0);
-    const baseIdr = baseForeign.mul(rate);
-    const discIdr = discForeign.mul(rate);
-    const afterIdr = afterForeign.mul(rate);
+    // pilih rate per-item sesuai prioritas: IDR -> body.currency_rate_used -> derive dari total_product_amount -> header invoice
+    let rateUsed;
+    const bodyRate = Number(body.currency_rate_used);
+    if (currencyCode === "IDR") {
+      rateUsed = 1;
+    } else if (Number.isFinite(bodyRate) && bodyRate > 0) {
+      rateUsed = bodyRate;
+    } else if (body.total_product_amount != null && Number(body.total_product_amount) > 0 && afterForeign.gt(0)) {
+      rateUsed = Number(body.total_product_amount) / Number(afterForeign);
+    } else {
+      rateUsed = Number(inv.currency_exchange_rate || 0);
+    }
+
+    const baseIdr = baseForeign.mul(rateUsed);
+    const discIdr = discForeign.mul(rateUsed);
+    const afterIdr = afterForeign.mul(rateUsed);
 
     const productDetail = await prisma.productdetail.create({
       data: {
@@ -73,7 +82,9 @@ export async function POST(req) {
         line_discount_amount_foreign: discForeign.toDecimalPlaces(6),
         line_total_foreign: afterForeign.toDecimalPlaces(6),
         line_total_idr: afterIdr.toDecimalPlaces(2),
-        total_product_amount: afterIdr.toDecimalPlaces(2), // legacy IDR
+        total_product_amount: afterIdr.toDecimalPlaces(2), // legacy IDR tetap isi dari hasil konversi per-item
+        // simpan kurs yang dipakai (audit). null untuk IDR.
+        currency_rate_used: currencyCode === "IDR" ? null : new Prisma.Decimal(rateUsed),
         discount_type: discountType,
         discount_value:
           discountValueRaw != null ? Number(discountValueRaw) : null,

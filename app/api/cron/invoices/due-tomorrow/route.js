@@ -81,7 +81,7 @@ export async function GET() {
       lines.push(
         `${idx + 1}. ${inv.invoice_number} \n· ${
           inv.customer_name
-        } \n· Rp ${amt} \n· PIC: ${creator} \n· Jatuh tempo: ${due}`
+        } \n· IDR ${amt} \n· PIC: ${creator} \n· Jatuh tempo: ${due}`
       );
     });
     if (count > maxList) {

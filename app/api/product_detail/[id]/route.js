@@ -1,6 +1,9 @@
+import {
+  recomputeTotals,
+  recomputeUnpaidAndStatus,
+} from "@/lib/invoiceRecompute";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { recomputeTotals, recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
 
 // GET by ID
 export async function GET(req, { params }) {
@@ -119,13 +122,26 @@ export async function PUT(req, { params }) {
       }
     }
     const afterForeign = baseForeign.sub(discForeign);
-    const rate =
-      currencyCode === "IDR"
-        ? new Prisma.Decimal(1)
-        : new Prisma.Decimal(inv?.currency_exchange_rate || 0);
-    const baseIdr = baseForeign.mul(rate);
-    const discIdr = discForeign.mul(rate);
-    const afterIdr = afterForeign.mul(rate);
+    // pilih rate per-item sesuai prioritas: IDR -> body.currency_rate_used -> derive dari total_product_amount -> header invoice
+    let rateUsed;
+    const bodyRate = Number(body.currency_rate_used);
+    if (currencyCode === "IDR") {
+      rateUsed = 1;
+    } else if (Number.isFinite(bodyRate) && bodyRate > 0) {
+      rateUsed = bodyRate;
+    } else if (
+      body.total_product_amount != null &&
+      Number(body.total_product_amount) > 0 &&
+      afterForeign.gt(0)
+    ) {
+      rateUsed = Number(body.total_product_amount) / Number(afterForeign);
+    } else {
+      rateUsed = Number(inv?.currency_exchange_rate || 0);
+    }
+
+    const baseIdr = baseForeign.mul(rateUsed);
+    const discIdr = discForeign.mul(rateUsed);
+    const afterIdr = afterForeign.mul(rateUsed);
 
     const updated = await prisma.productdetail.update({
       where: { product_detail_id: id },
@@ -140,6 +156,8 @@ export async function PUT(req, { params }) {
         line_total_foreign: afterForeign.toDecimalPlaces(6),
         line_total_idr: afterIdr.toDecimalPlaces(2),
         total_product_amount: afterIdr.toDecimalPlaces(2),
+        currency_rate_used:
+          currencyCode === "IDR" ? null : new Prisma.Decimal(rateUsed),
         discount_type: discountType || null,
         discount_value: discountValue != null ? Number(discountValue) : null,
         line_total_before_discount: baseIdr.toDecimalPlaces(2),
@@ -148,8 +166,12 @@ export async function PUT(req, { params }) {
       },
     });
     // recompute totals and unpaid/status
-    try { await recomputeTotals(nextInvoiceId); } catch {}
-    try { await recomputeUnpaidAndStatus(nextInvoiceId); } catch {}
+    try {
+      await recomputeTotals(nextInvoiceId);
+    } catch {}
+    try {
+      await recomputeUnpaidAndStatus(nextInvoiceId);
+    } catch {}
 
     return new Response(JSON.stringify(updated), { status: 200 });
   } catch (error) {
@@ -172,8 +194,12 @@ export async function DELETE(req, { params }) {
     await prisma.productdetail.delete({ where: { product_detail_id: id } });
 
     // Recompute totals and unpaid/status after deletion
-    try { await recomputeTotals(before?.invoice_id); } catch {}
-    try { await recomputeUnpaidAndStatus(before?.invoice_id); } catch {}
+    try {
+      await recomputeTotals(before?.invoice_id);
+    } catch {}
+    try {
+      await recomputeUnpaidAndStatus(before?.invoice_id);
+    } catch {}
 
     return new Response(JSON.stringify({ message: "Deleted successfully" }), {
       status: 200,
