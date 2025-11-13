@@ -21,6 +21,8 @@ export async function middleware(req) {
     "/api/files/invoice/",
     // "/api/debug/watzap",
     "/api/files",
+    "/api/cron/invoices/due-tomorrow",
+    "/api/cron/invoices/overdue-filter",
   ];
 
   if (publicPaths.some((path) => pathname.startsWith(path))) {
@@ -62,6 +64,7 @@ export async function middleware(req) {
         "/api/currency_rates", // admin-only currency endpoints
         "/api/debug/watzap",
         "/api/cron/invoices/due-tomorrow",
+        "/api/cron/invoices/overdue-filter",
         "/api/invoice/calendar",
       ],
       konsultan: [

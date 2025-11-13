@@ -21,7 +21,22 @@ function formatYMD(d) {
   return `${y}-${m}-${dd}`;
 }
 
-export async function GET() {
+const CRON_SECRET_KEY = process.env.CRON_SECRET_KEY;
+function authenticateCron(req) {
+  const provided = req.headers.get("x-cron-secret");
+  if (!CRON_SECRET_KEY || provided !== CRON_SECRET_KEY) {
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  return null;
+}
+
+export async function GET(req) {
+  const authResponse = authenticateCron(req);
+  if (authResponse) return authResponse;
+
   try {
     // Hitung rentang tanggal untuk "besok" berdasarkan timezone server
     const now = new Date();
@@ -107,6 +122,9 @@ export async function GET() {
 
 // Optionally accept POST to allow manual trigger with override date
 export async function POST(req) {
+  const authResponse = authenticateCron(req);
+  if (authResponse) return authResponse;
+
   try {
     const body = await req.json().catch(() => ({}));
     const override = body?.date; // YYYY-MM-DD untuk memaksa tanggal
