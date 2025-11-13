@@ -89,7 +89,7 @@ model tac {
   company_id    String   @db.Char(36)
   tac_description String
   created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt @db.Timestamp(0)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
   company companies @relation(fields: [company_id], references: [company_id])
 }
@@ -113,7 +113,7 @@ model customer {
   customer_contact String?  @db.VarChar(20)
   customer_address String?  @db.VarChar(255)
   created_at       DateTime @default(now()) @db.Timestamp(0)
-  updated_at       DateTime @updatedAt @db.Timestamp(0)
+  updated_at       DateTime @default(now()) @updatedAt @db.Timestamp(0)
 }
 
 model categories {
@@ -121,7 +121,7 @@ model categories {
   category_name        String    @db.VarChar(255)
   category_description String?   @db.Text
   created_at           DateTime  @default(now())
-  updated_at           DateTime  @updatedAt @db.Timestamp(0)
+  updated_at           DateTime  @default(now()) @updatedAt @db.Timestamp(0)
 
   products             product[]
 }
@@ -160,7 +160,7 @@ model product {
   item_type           ProductItemType
   type_status         ProductTypeStatus
   created_at          DateTime   @default(now())
-  updated_at          DateTime   @updatedAt @db.Timestamp(0)
+  updated_at          DateTime   @default(now()) @updatedAt @db.Timestamp(0)
 
   category categories? @relation(fields: [category_id], references: [category_id])
 
@@ -177,7 +177,7 @@ model events {
   event_date        DateTime @db.DateTime
   event_cost        Int?
   created_at        DateTime @default(now()) @db.Timestamp(0)
-  updated_at        DateTime @updatedAt @db.Timestamp(0)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
   EventDetail eventdetail[]
 }
@@ -211,7 +211,7 @@ model invoices {
   // menandai pengguna pembuat invoice; optional untuk kompatibilitas data lama
   created_by_user_id          String?  @db.Char(36)
   created_at                  DateTime @default(now()) @db.Timestamp(0)
-  updated_at                  DateTime @updatedAt @db.Timestamp(0)
+  updated_at                  DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
   ProductDetail productdetail[]
 
@@ -255,7 +255,7 @@ model productdetail {
   line_total_before_discount_foreign Decimal? @db.Decimal(18, 6)
   line_discount_amount_foreign       Decimal? @db.Decimal(18, 6)
   created_at           DateTime @default(now()) @db.Timestamp(0)
-  updated_at           DateTime @updatedAt @db.Timestamp(0)
+  updated_at           DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
   //  gunakan nama model persis seperti yang ada
   invoice invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
@@ -272,7 +272,7 @@ model eventdetail {
   quantity          Int
   total_event_cost  Decimal  @db.Decimal(10, 2)
   created_at        DateTime @default(now()) @db.Timestamp(0)
-  updated_at        DateTime @updatedAt @db.Timestamp(0)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
   // ✅ Relasi
   invoice invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
@@ -295,7 +295,7 @@ model paymentproofs {
   proof_sequence       Int?
   proof_date           DateTime? @db.DateTime
   created_at           DateTime @default(now()) @db.Timestamp(0)
-  updated_at           DateTime @updatedAt @db.Timestamp(0)
+  updated_at           DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
   // ✅ Relasi
   invoice    invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
@@ -311,7 +311,7 @@ model barcodes {
   barcode_link      String   @db.Text
   barcode_image_path String  @db.Text
   created_at        DateTime @default(now()) @db.Timestamp(0)
-  updated_at        DateTime @updatedAt @db.Timestamp(0)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
   // ✅ Relasi
   invoice invoices @relation(fields: [invoice_id], references: [invoice_id], onDelete: Cascade)
@@ -328,7 +328,7 @@ model currency_rates {
   source         String?  @db.VarChar(100)
   notes          String?  @db.Text
   created_at     DateTime @default(now()) @db.DateTime
-  updated_at     DateTime @updatedAt @db.DateTime
+  updated_at     DateTime @default(now()) @updatedAt @db.DateTime
 
   @@unique([currency_code, effective_date])
   @@index([currency_code, effective_date])
