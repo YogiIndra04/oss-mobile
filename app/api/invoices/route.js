@@ -277,13 +277,16 @@ export async function POST(req) {
             .replace(/-+/g, "-");
         const fn = `invoice_${safe(invoice_number)}_${safe(customer_name)}`;
 
-        // Send via proxy URL (non-named); fallback to direct URL
-        try {
-          const origin = process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
-          const proxyUrl = `${origin}/api/files/invoice/${newInvoice.invoice_id}`;
-          await sendGroupFile(proxyUrl, msg, fn);
-        } catch {
-          await sendGroupFile(pdfUrl, msg, fn);
+        // Send via CDN URL with friendly filename (proxy not needed anymore)
+        if (pdfUrl) {
+          try {
+            await sendGroupFile(pdfUrl, msg, `${fn}.pdf`);
+          } catch (sendErr) {
+            console.error(
+              "WA notify (create invoice) sendGroupFile failed:",
+              sendErr
+            );
+          }
         }
       }
     } catch (e) {

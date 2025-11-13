@@ -418,12 +418,12 @@ export async function PUT(req, { params }) {
             finalInvoice.customer_name
           )}`;
           try {
-            const origin =
-              process.env.PUBLIC_BASE_URL || new URL(req.url).origin;
-            const proxyUrl = `${origin}/api/files/invoice/${id}`;
-            await sendGroupFile(proxyUrl, msg, fn);
-          } catch {
-            await sendGroupFile(finalInvoice.pdf_path, msg, fn);
+            await sendGroupFile(finalInvoice.pdf_path, msg, `${fn}.pdf`);
+          } catch (sendErr) {
+            console.error(
+              "WA notify (update invoice) sendGroupFile failed:",
+              sendErr
+            );
           }
         }
       }

@@ -14,12 +14,12 @@ export async function middleware(req) {
   // --- route public tanpa token ---
   const publicPaths = [
     "/api/auth/login",
-    "/api/auth/register",
+    // "/api/auth/register",
     "/api/auth/me",
     "/api/users",
     "/api/storage",
     "/api/files/invoice/",
-    "/api/debug/watzap",
+    // "/api/debug/watzap",
     "/api/files",
   ];
 
@@ -92,10 +92,10 @@ export async function middleware(req) {
         "/api/payment_proofs",
         "/api/categories",
         "/api/barcodes",
-        "/api/tools", // admin utilities (e.g., storage migration)
+        // "/api/tools", // admin utilities (e.g., storage migration)
         "/api/currency_rates", // admin-only currency endpoints
-        "/api/debug/watzap",
-        "/api/cron/invoices/due-tomorrow",
+        // "/api/debug/watzap",
+        // "/api/cron/invoices/due-tomorrow",
         "/api/invoice/calendar",
       ],
     };
