@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { applyOverdueStamp } from "@/lib/cron/stampOverduePdf";
 
 const CRON_SECRET_KEY = process.env.CRON_SECRET_KEY;
 function authenticateCron(req) {
@@ -36,11 +37,20 @@ export async function POST(req) {
       data: { payment_status: "Jatuh_tempo" },
     });
 
+    let stampSummary = null;
+    try {
+      stampSummary = await applyOverdueStamp();
+    } catch (stampError) {
+      console.error("cron invoices/overdue-filter stamping error:", stampError);
+      stampSummary = { ok: false, error: stampError.message || "Stamp failed" };
+    }
+
     return NextResponse.json(
       {
         ok: true,
         updated: result.count,
         cutoffDate: cutoffDate.toISOString().slice(0, 10),
+        stampSummary,
       },
       { status: 200 }
     );
