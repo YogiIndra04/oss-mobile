@@ -94,8 +94,12 @@ export async function PUT(req, { params }) {
 
     const nextTitle =
       sanitizeString(body.product_title) ?? existing.product_title;
-    const nextDesc =
-      sanitizeString(body.product_description) ?? existing.product_description;
+    const nextDesc = Object.prototype.hasOwnProperty.call(
+      body,
+      "product_description"
+    )
+      ? sanitizeString(body.product_description)
+      : existing.product_description;
     const nextTypeStatus = normalizeTypeStatus(
       body.type_status ?? existing.type_status
     );
@@ -163,7 +167,9 @@ export async function DELETE(_req, { params }) {
     });
     if (detailCount > 0) {
       return NextResponse.json(
-        { error: "Produk sudah digunakan pada invoice dan tidak dapat dihapus" },
+        {
+          error: "Produk sudah digunakan pada invoice dan tidak dapat dihapus",
+        },
         { status: 409 }
       );
     }

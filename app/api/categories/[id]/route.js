@@ -105,7 +105,9 @@ export async function PUT(req, { params }) {
             : existing.category_name,
         category_description:
           category_description !== undefined
-            ? category_description.trim() || null
+            ? typeof category_description === "string"
+              ? category_description.trim() || null
+              : null
             : existing.category_description,
       },
     });

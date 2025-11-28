@@ -66,6 +66,8 @@ export async function middleware(req) {
         "/api/cron/invoices/due-tomorrow",
         "/api/cron/invoices/overdue-filter",
         "/api/invoice/calendar",
+        "/api/reports",
+        "/api/dashboard",
       ],
       konsultan: [
         // "/api/companies",
@@ -100,6 +102,7 @@ export async function middleware(req) {
         // "/api/debug/watzap",
         // "/api/cron/invoices/due-tomorrow",
         "/api/invoice/calendar",
+        "/api/dashboard/consultant",
       ],
     };
 
