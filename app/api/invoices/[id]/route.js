@@ -86,6 +86,33 @@ import { sendGroupFile, sendGroupMessage } from "@/lib/utils/whatsappGroup";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 
+const parseNumericFlexible = (
+  value,
+  { defaultValue = null, min = 0, allowZero = true } = {}
+) => {
+  if (value === undefined || value === null) return defaultValue;
+  const raw = value.toString().trim();
+  if (!raw) return defaultValue;
+  let normalized = raw;
+  const hasComma = raw.includes(",");
+  const hasDot = raw.includes(".");
+  if (hasComma && hasDot) {
+    normalized = raw.replace(/,/g, "");
+  } else if (hasComma && !hasDot) {
+    normalized = raw.replace(/,/g, "");
+  } else if (hasDot && !hasComma) {
+    if (/^\d{1,3}(\.\d{3})+$/.test(raw)) {
+      normalized = raw.replace(/\./g, "");
+    }
+  }
+  normalized = normalized.replace(/[^\d.-]/g, "");
+  const num = Number(normalized);
+  if (!Number.isFinite(num)) return defaultValue;
+  if (!allowZero && num === 0) return defaultValue;
+  if (num < min) return defaultValue;
+  return num;
+};
+
 // UPDATE Invoice pakai form-data{}
 export async function PUT(req, { params }) {
   try {
@@ -185,7 +212,11 @@ export async function PUT(req, { params }) {
         currency_exchange_rate_date != null &&
         String(currency_exchange_rate_date).length > 0;
       if (hasRate && hasDate) {
-        const n = Number(currency_exchange_rate);
+        const n = parseNumericFlexible(currency_exchange_rate, {
+          defaultValue: null,
+          min: 0,
+          allowZero: false,
+        });
         if (!Number.isFinite(n) || n <= 0) {
           return NextResponse.json(
             { error: "Invalid currency_exchange_rate" },
@@ -258,13 +289,22 @@ export async function PUT(req, { params }) {
         customer_address,
         // unpaid dihitung otomatis dari payment proofs; jangan override jika tidak dikirim
         ...(unpaid != null && String(unpaid).length > 0
-          ? { unpaid: Number(unpaid) }
+          ? {
+              unpaid:
+                parseNumericFlexible(unpaid, {
+                  defaultValue: Number(oldInvoice.unpaid ?? 0),
+                  min: 0,
+                }) ?? Number(oldInvoice.unpaid ?? 0),
+            }
           : {}),
         total_amount:
           total_amount !== null &&
           total_amount !== undefined &&
           String(total_amount).length > 0
-            ? Number(total_amount)
+            ? parseNumericFlexible(total_amount, {
+                defaultValue: Number(oldInvoice.total_amount ?? 0),
+                min: 0,
+              }) ?? Number(oldInvoice.total_amount ?? 0)
             : oldInvoice.total_amount,
         payment_status:
           payment_status && payment_status.trim()

@@ -156,6 +156,7 @@ model product {
   category_id         String?    @db.Char(36)
   product_title       String     @db.VarChar(255)
   product_description String?    @db.Text
+  product_currency    String     @default("IDR") @db.VarChar(10)
   product_amount      Int
   item_type           ProductItemType
   type_status         ProductTypeStatus
@@ -189,16 +190,16 @@ model invoices {
   invoice_type                InvoiceType
   customer_name               String   @db.VarChar(255)
   customer_address            String?  @db.VarChar(255)
-  unpaid                      Decimal  @default(0) @db.Decimal(10, 2)
-  total_amount                Decimal  @db.Decimal(10, 2)
+  unpaid                      Decimal  @default(0) @db.Decimal(18, 2)
+  total_amount                Decimal  @db.Decimal(18, 2)
   // subtotal sebelum diskon invoice (setelah diskon per-item)
-  subtotal_before_invoice_discount Decimal @default(0) @db.Decimal(10, 2)
+  subtotal_before_invoice_discount Decimal @default(0) @db.Decimal(18, 2)
   // jenis & nilai diskon invoice (opsional)
   invoice_discount_type       DiscountType?
-  invoice_discount_value      Decimal? @db.Decimal(10, 2)
+  invoice_discount_value      Decimal? @db.Decimal(18, 2)
   // nilai potongan invoice dan subtotal setelah diskon invoice
-  invoice_discount_amount     Decimal @default(0) @db.Decimal(10, 2)
-  subtotal_after_invoice_discount Decimal @default(0) @db.Decimal(10, 2)
+  invoice_discount_amount     Decimal @default(0) @db.Decimal(18, 2)
+  subtotal_after_invoice_discount Decimal @default(0) @db.Decimal(18, 2)
   payment_status              PaymentStatus
   invoice_creation_date       DateTime @db.DateTime
   payment_date                DateTime? @db.DateTime
@@ -244,13 +245,13 @@ model productdetail {
   // audit: kurs yang dipakai pada line (jika non-IDR)
   currency_rate_used   Decimal? @db.Decimal(18, 6)
   // total setelah diskon per-item (dipertahankan kompatibel)
-  total_product_amount Decimal  @db.Decimal(10, 2)
+  total_product_amount Decimal  @db.Decimal(18, 2)
   // informasi diskon per-item (opsional)
   discount_type              DiscountType?
-  discount_value             Decimal? @db.Decimal(10, 2)
+  discount_value             Decimal? @db.Decimal(18, 2)
   // nilai sebelum diskon & potongan pada level item
-  line_total_before_discount Decimal  @default(0) @db.Decimal(10, 2)
-  line_discount_amount       Decimal  @default(0) @db.Decimal(10, 2)
+  line_total_before_discount Decimal  @default(0) @db.Decimal(18, 2)
+  line_discount_amount       Decimal  @default(0) @db.Decimal(18, 2)
   // nilai foreign untuk kompatibilitas baru
   line_total_before_discount_foreign Decimal? @db.Decimal(18, 6)
   line_discount_amount_foreign       Decimal? @db.Decimal(18, 6)
@@ -270,7 +271,7 @@ model eventdetail {
   invoice_id        String   @db.Char(36)
   event_id          String   @db.Char(36)
   quantity          Int
-  total_event_cost  Decimal  @db.Decimal(10, 2)
+  total_event_cost  Decimal  @db.Decimal(18, 2)
   created_at        DateTime @default(now()) @db.Timestamp(0)
   updated_at        DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
@@ -289,7 +290,7 @@ model paymentproofs {
   proof_image_path     String   @db.Text
   proof_title          String?  @db.VarChar(255)
   proof_description    String?  @db.Text
-  proof_amount         Decimal  @db.Decimal(10, 2)
+  proof_amount         Decimal  @db.Decimal(18, 2)
   uploaded_by_user_id  String   @db.Char(36)
   // Penomoran cicilan per-invoice (nullable untuk kompatibilitas data lama)
   proof_sequence       Int?

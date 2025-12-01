@@ -2,6 +2,30 @@ import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { recomputeTotals, recomputeUnpaidAndStatus } from "@/lib/invoiceRecompute";
 
+const parseNumericFlexible = (value, { defaultValue = null, min = 0, allowZero = true } = {}) => {
+  if (value === undefined || value === null) return defaultValue;
+  const raw = value.toString().trim();
+  if (!raw) return defaultValue;
+  let normalized = raw;
+  const hasComma = raw.includes(",");
+  const hasDot = raw.includes(".");
+  if (hasComma && hasDot) {
+    normalized = raw.replace(/,/g, "");
+  } else if (hasComma && !hasDot) {
+    normalized = raw.replace(/,/g, "");
+  } else if (hasDot && !hasComma) {
+    if (/^\d{1,3}(\.\d{3})+$/.test(raw)) {
+      normalized = raw.replace(/\./g, "");
+    }
+  }
+  normalized = normalized.replace(/[^\d.-]/g, "");
+  const num = Number(normalized);
+  if (!Number.isFinite(num)) return defaultValue;
+  if (!allowZero && num === 0) return defaultValue;
+  if (num < min) return defaultValue;
+  return num;
+};
+
 // CREATE ProductDetail
 export async function POST(req) {
   try {
@@ -24,11 +48,13 @@ export async function POST(req) {
       });
     }
     // Hitung total line dengan dukungan currency (foreign + IDR)
-    const qty = Math.max(1, Number(body.quantity));
+    const qty = parseNumericFlexible(body.quantity, { defaultValue: 1, min: 1 }) || 1;
     const inv = invoiceExists;
     const discountType = body.discount_type || null;
     const discountValueRaw =
-      body.discount_value != null ? Number(body.discount_value) : null;
+      body.discount_value != null
+        ? parseNumericFlexible(body.discount_value, { defaultValue: null, min: 0 })
+        : null;
     const currencyCode = (
       body.currency_code?.toString() ||
       inv.currency_accepted ||
@@ -36,7 +62,10 @@ export async function POST(req) {
     ).toUpperCase();
     const unitPriceForeign =
       body.unit_price_foreign != null
-        ? Number(body.unit_price_foreign)
+        ? parseNumericFlexible(body.unit_price_foreign, {
+            defaultValue: Number(productExists.product_amount),
+            min: 0,
+          })
         : Number(productExists.product_amount);
 
     const baseForeign = new Prisma.Decimal(qty).mul(
@@ -56,7 +85,11 @@ export async function POST(req) {
     const afterForeign = baseForeign.sub(discForeign);
     // pilih rate per-item sesuai prioritas: IDR -> body.currency_rate_used -> derive dari total_product_amount -> header invoice
     let rateUsed;
-    const bodyRate = Number(body.currency_rate_used);
+    const bodyRate = parseNumericFlexible(body.currency_rate_used, {
+      defaultValue: null,
+      min: 0,
+      allowZero: false,
+    });
     if (currencyCode === "IDR") {
       rateUsed = 1;
     } else if (Number.isFinite(bodyRate) && bodyRate > 0) {
@@ -65,6 +98,12 @@ export async function POST(req) {
       rateUsed = Number(body.total_product_amount) / Number(afterForeign);
     } else {
       rateUsed = Number(inv.currency_exchange_rate || 0);
+    }
+    if (currencyCode !== "IDR" && (!Number.isFinite(rateUsed) || rateUsed <= 0)) {
+      return new Response(
+        JSON.stringify({ error: "currency_rate_used wajib diisi untuk currency non-IDR" }),
+        { status: 400 }
+      );
     }
 
     const baseIdr = baseForeign.mul(rateUsed);

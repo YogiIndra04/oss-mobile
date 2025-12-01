@@ -13,6 +13,14 @@ const normalizeItemType = (value) => {
   return normalized === "service" ? "service" : "product";
 };
 
+const normalizeCurrency = (value, fallback) => {
+  const base = value == null ? fallback : value;
+  if (!base) return "IDR";
+  const code = base.toString().trim().toUpperCase();
+  const safe = code.replace(/[^A-Z0-9_]/g, "").slice(0, 10);
+  return safe || "IDR";
+};
+
 const parseAmount = (value, { defaultValue = 0, forceZero = false } = {}) => {
   if (forceZero) return 0;
   const parsed = Number(value?.toString().replace(/[^0-9.-]/g, ""));
@@ -31,6 +39,7 @@ const mapProduct = (product) => ({
   product_id: product.product_id,
   product_title: product.product_title,
   product_description: product.product_description,
+  product_currency: product.product_currency,
   product_amount: product.product_amount,
   type_status: product.type_status,
   item_type: product.item_type,
@@ -100,6 +109,10 @@ export async function PUT(req, { params }) {
     )
       ? sanitizeString(body.product_description)
       : existing.product_description;
+    const nextCurrency = normalizeCurrency(
+      body.product_currency,
+      existing.product_currency
+    );
     const nextTypeStatus = normalizeTypeStatus(
       body.type_status ?? existing.type_status
     );
@@ -133,6 +146,7 @@ export async function PUT(req, { params }) {
         category_id: nextCategoryId,
         product_title: nextTitle,
         product_description: nextDesc,
+        product_currency: nextCurrency,
         product_amount: nextAmount,
         type_status: nextTypeStatus,
         item_type: nextItemType,

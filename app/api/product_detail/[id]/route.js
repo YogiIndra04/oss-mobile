@@ -5,6 +5,30 @@ import {
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
+const parseNumericFlexible = (value, { defaultValue = null, min = 0, allowZero = true } = {}) => {
+  if (value === undefined || value === null) return defaultValue;
+  const raw = value.toString().trim();
+  if (!raw) return defaultValue;
+  let normalized = raw;
+  const hasComma = raw.includes(",");
+  const hasDot = raw.includes(".");
+  if (hasComma && hasDot) {
+    normalized = raw.replace(/,/g, "");
+  } else if (hasComma && !hasDot) {
+    normalized = raw.replace(/,/g, "");
+  } else if (hasDot && !hasComma) {
+    if (/^\d{1,3}(\.\d{3})+$/.test(raw)) {
+      normalized = raw.replace(/\./g, "");
+    }
+  }
+  normalized = normalized.replace(/[^\d.-]/g, "");
+  const num = Number(normalized);
+  if (!Number.isFinite(num)) return defaultValue;
+  if (!allowZero && num === 0) return defaultValue;
+  if (num < min) return defaultValue;
+  return num;
+};
+
 // GET by ID
 export async function GET(req, { params }) {
   try {
@@ -17,6 +41,11 @@ export async function GET(req, { params }) {
         product_id: true,
         quantity: true,
         total_product_amount: true,
+        currency_code: true,
+        unit_price_foreign: true,
+        line_total_foreign: true,
+        line_total_idr: true,
+        currency_rate_used: true,
         discount_type: true,
         discount_value: true,
         line_total_before_discount: true,
@@ -67,7 +96,9 @@ export async function PUT(req, { params }) {
     const nextInvoiceId = body.invoice_id || existing.invoice_id;
     const nextProductId = body.product_id || existing.product_id;
     const qty =
-      body.quantity != null ? Number(body.quantity) : existing.quantity;
+      body.quantity != null
+        ? parseNumericFlexible(body.quantity, { defaultValue: existing.quantity, min: 1 }) || existing.quantity
+        : existing.quantity;
 
     const prod = await prisma.product.findUnique({
       where: { product_id: nextProductId },
@@ -88,7 +119,7 @@ export async function PUT(req, { params }) {
       "discount_value"
     )
       ? body.discount_value != null
-        ? Number(body.discount_value)
+        ? parseNumericFlexible(body.discount_value, { defaultValue: null, min: 0 })
         : null
       : existing.discount_value;
     const inv = await prisma.invoices.findUnique({
@@ -102,7 +133,13 @@ export async function PUT(req, { params }) {
     ).toUpperCase();
     const unitPriceForeign =
       body.unit_price_foreign != null
-        ? Number(body.unit_price_foreign)
+        ? parseNumericFlexible(body.unit_price_foreign, {
+            defaultValue:
+              existing.unit_price_foreign != null
+                ? Number(existing.unit_price_foreign)
+                : Number(prod.product_amount),
+            min: 0,
+          })
         : existing.unit_price_foreign != null
         ? Number(existing.unit_price_foreign)
         : Number(prod.product_amount);
@@ -124,7 +161,11 @@ export async function PUT(req, { params }) {
     const afterForeign = baseForeign.sub(discForeign);
     // pilih rate per-item sesuai prioritas: IDR -> body.currency_rate_used -> derive dari total_product_amount -> header invoice
     let rateUsed;
-    const bodyRate = Number(body.currency_rate_used);
+    const bodyRate = parseNumericFlexible(body.currency_rate_used, {
+      defaultValue: null,
+      min: 0,
+      allowZero: false,
+    });
     if (currencyCode === "IDR") {
       rateUsed = 1;
     } else if (Number.isFinite(bodyRate) && bodyRate > 0) {
@@ -137,6 +178,12 @@ export async function PUT(req, { params }) {
       rateUsed = Number(body.total_product_amount) / Number(afterForeign);
     } else {
       rateUsed = Number(inv?.currency_exchange_rate || 0);
+    }
+    if (currencyCode !== "IDR" && (!Number.isFinite(rateUsed) || rateUsed <= 0)) {
+      return new Response(
+        JSON.stringify({ error: "currency_rate_used wajib diisi untuk currency non-IDR" }),
+        { status: 400 }
+      );
     }
 
     const baseIdr = baseForeign.mul(rateUsed);

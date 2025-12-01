@@ -15,6 +15,15 @@ const normalizeItemType = (value) => {
   return normalized === "service" ? "service" : "product";
 };
 
+// Normalisasi currency (default IDR)
+const normalizeCurrency = (value) => {
+  if (!value) return "IDR";
+  const code = value.toString().trim().toUpperCase();
+  // Ambil 3-10 karakter A-Z/0-9/_ sebagai guard sederhana
+  const safe = code.replace(/[^A-Z0-9_]/g, "").slice(0, 10);
+  return safe || "IDR";
+};
+
 // Parsing angka amount
 const parseAmount = (value, { defaultValue = 0, forceZero = false } = {}) => {
   if (forceZero) return 0;
@@ -39,6 +48,7 @@ const mapProduct = (product) => ({
   product_id: product.product_id,
   product_title: product.product_title,
   product_description: product.product_description,
+  product_currency: product.product_currency,
   product_amount: product.product_amount,
   type_status: product.type_status,
   item_type: product.item_type,
@@ -107,6 +117,7 @@ export async function POST(req) {
     const normalizedTypeStatus = normalizeTypeStatus(body.type_status);
     const normalizedItemType = normalizeItemType(body.item_type);
     const sanitizedDescription = sanitizeString(body.product_description);
+    const normalizedCurrency = normalizeCurrency(body.product_currency);
 
     const amount = parseAmount(body.product_amount, {
       defaultValue: 0,
@@ -131,6 +142,7 @@ export async function POST(req) {
         category_id: rawCategoryId,
         product_title: trimmedTitle,
         product_description: sanitizedDescription,
+        product_currency: normalizedCurrency,
         product_amount: amount,
         type_status: normalizedTypeStatus,
         item_type: normalizedItemType,
